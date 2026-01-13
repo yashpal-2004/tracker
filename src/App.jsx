@@ -10,6 +10,25 @@ import {
   query,
   orderBy
 } from 'firebase/firestore';
+import {
+  BookOpen,
+  Trash2,
+  Edit2,
+  Star,
+  Plus,
+  Calendar,
+  FileText,
+  ExternalLink,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  Cloud,
+  CloudOff,
+  ChevronRight,
+  Hash,
+  X,
+  Save
+} from 'lucide-react';
 
 const DEFAULT_SUBJECTS = [
   "DM Class", "DM Lab", "DVA Class", "DVA Lab",
@@ -127,12 +146,20 @@ function App() {
         <header className="main-header">
           <div className="title-group">
             <h1>{activeSubject}</h1>
-            <span className={`sync-badge ${syncStatus.toLowerCase().includes('error') ? 'error' : ''}`}>
-              {syncStatus}
-            </span>
+            <div className={`sync-badge ${syncStatus.toLowerCase().includes('error') ? 'error' : ''} ${syncStatus.toLowerCase().includes('up to date') ? 'online' : ''}`}>
+              {syncStatus.toLowerCase().includes('connecting') ? <Loader2 size={14} className="spin" /> :
+                syncStatus.toLowerCase().includes('error') ? <AlertCircle size={14} /> :
+                  syncStatus.toLowerCase().includes('offline') ? <CloudOff size={14} /> : <Cloud size={14} />}
+              <span>{syncStatus}</span>
+            </div>
           </div>
           <div className="stats">
-            {loading ? 'Loading...' : `${currentTasks.length} total items`}
+            {loading ? <Loader2 size={16} className="spin" /> : (
+              <>
+                <CheckCircle2 size={16} />
+                <span>{currentTasks.length} items</span>
+              </>
+            )}
           </div>
         </header>
 
@@ -188,7 +215,8 @@ function Sidebar({ subjects, activeSubject, onSelect }) {
   return (
     <aside className="sidebar glass">
       <div className="sidebar-header">
-        <h2>📚 Subjects</h2>
+        <BookOpen size={24} />
+        <h2>Subjects</h2>
       </div>
       <nav className="subject-list">
         {subjects.map(subject => (
@@ -197,7 +225,9 @@ function Sidebar({ subjects, activeSubject, onSelect }) {
             className={`subject-btn ${activeSubject === subject ? 'active' : ''}`}
             onClick={() => onSelect(subject)}
           >
-            {subject}
+            <Hash size={14} />
+            <span>{subject}</span>
+            {activeSubject === subject && <ChevronRight size={14} className="active-arrow" />}
           </button>
         ))}
       </nav>
@@ -211,6 +241,11 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
   const [link, setLink] = useState('');
   const [impQs, setImpQs] = useState('');
   const [isLoaded, setIsLoaded] = useState(false);
+
+  const completedCount = tasks.filter(t => t.completed).length;
+  const totalCount = tasks.length;
+  const percentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const label = type === 'lecture' ? 'Attended' : 'Completed';
 
   // Restore drafts on mount/subject change
   useEffect(() => {
@@ -257,7 +292,24 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
 
   return (
     <section className={`task-section ${type}-section glass`}>
-      <h3>{title}</h3>
+      <div className="section-header">
+        <div className="section-title-group">
+          <h3>{title}</h3>
+          <p className="section-subtitle">{totalCount} total items</p>
+        </div>
+        <div className="progress-card">
+          <div className="progress-circle-container">
+            <svg className="progress-circle" viewBox="0 0 36 36">
+              <path className="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+              <path className="circle" strokeDasharray={`${percentage}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+            </svg>
+          </div>
+          <div className="progress-info">
+            <span className="progress-percent">{percentage}%</span>
+            <span className="progress-count">{completedCount}/{totalCount} {label}</span>
+          </div>
+        </div>
+      </div>
       <form className="input-row" onSubmit={handleSubmit}>
         <input
           placeholder={`${title.slice(0, -1)} name`}
@@ -283,7 +335,10 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
             onChange={e => setImpQs(e.target.value)}
           />
         )}
-        <button type="submit" className="add-btn">Add</button>
+        <button type="submit" className="add-btn">
+          <Plus size={18} />
+          <span>Add</span>
+        </button>
       </form>
 
       <div className="task-list">
@@ -297,27 +352,53 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
             <div className="task-info">
               <span className="task-number">#{task.number}</span>
               <span className={`task-name ${task.important ? 'important' : ''}`}>
-                {task.link ? (
-                  <a href={task.link} target="_blank" rel="noreferrer">{task.name}</a>
-                ) : task.name}
+                {type === 'lecture' ? (
+                  task.notes ? (
+                    <a href={task.notes} target="_blank" rel="noreferrer" className="lecture-link">
+                      {task.name}
+                      <ExternalLink size={14} />
+                    </a>
+                  ) : (
+                    <span className="no-notes">
+                      {task.name} <em style={{ fontSize: '0.8em', opacity: 0.6 }}>(No Notes)</em>
+                    </span>
+                  )
+                ) : (
+                  task.link ? (
+                    <a href={task.link} target="_blank" rel="noreferrer">
+                      {task.name} <ExternalLink size={12} style={{ marginLeft: '4px', display: 'inline' }} />
+                    </a>
+                  ) : task.name
+                )}
               </span>
-              {task.date && <span className="task-date">{formatDate(task.date)}</span>}
-              {task.notes && (
-                <span className="task-notes">
-                  | <a href={task.notes} target="_blank" rel="noreferrer">View Notes</a>
-                </span>
-              )}
-              {task.impQs && <span className="task-imp"> | Imp: {task.impQs}</span>}
+              <div className="task-meta">
+                {task.date && (
+                  <span className="task-date">
+                    <Calendar size={12} /> {formatDate(task.date)}
+                  </span>
+                )}
+                {type !== 'lecture' && task.link && (
+                  <span className="task-link-badge">
+                    <FileText size={12} /> Resource
+                  </span>
+                )}
+                {task.impQs && <span className="task-imp">Imp: {task.impQs}</span>}
+              </div>
             </div>
             <div className="task-actions">
               <button
                 className={`star-btn ${task.important ? 'active' : ''}`}
                 onClick={() => onUpdate(task.id, { important: !task.important })}
+                title="Mark Important"
               >
-                ★
+                <Star size={18} fill={task.important ? "currentColor" : "none"} />
               </button>
-              <button className="edit-btn" onClick={() => onEdit(task)}>✎</button>
-              <button className="delete-btn" onClick={() => onDelete(task.id)}>×</button>
+              <button className="edit-btn" onClick={() => onEdit(task)} title="Edit">
+                <Edit2 size={18} />
+              </button>
+              <button className="delete-btn" onClick={() => onDelete(task.id)} title="Delete">
+                <Trash2 size={18} />
+              </button>
             </div>
           </div>
         ))}
@@ -334,9 +415,12 @@ function EditModal({ task, onClose, onSave }) {
   const [impQs, setImpQs] = useState(task.impQs || '');
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content glass">
-        <h3>Edit {task.type}</h3>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content glass" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Edit {task.type}</h3>
+          <button className="close-btn" onClick={onClose}><X size={20} /></button>
+        </div>
         <div className="modal-fields">
           <label>Name</label>
           <input value={name} onChange={e => setName(e.target.value)} />
@@ -370,7 +454,10 @@ function EditModal({ task, onClose, onSave }) {
             date,
             [task.type === 'lecture' ? 'notes' : 'link']: link,
             impQs
-          })}>Save Changes</button>
+          })}>
+            <Save size={18} />
+            <span>Save Changes</span>
+          </button>
           <button className="cancel-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
