@@ -242,12 +242,34 @@
   stroke: var(--success) !important;
 }
 
+.assignment-card .circle,
 .assignment-section .circle {
-  stroke: var(--secondary);
+  stroke: var(--secondary) !important;
 }
 
+.quiz-card .circle,
 .quiz-section .circle {
-  stroke: var(--accent);
+  stroke: var(--accent) !important;
+}
+
+.project-card .circle,
+.project-section .circle {
+  stroke: #8b5cf6 !important;
+}
+
+.midSem-card .circle,
+.midSem-section .circle {
+  stroke: #f59e0b !important;
+}
+
+.endSem-card .circle,
+.endSem-section .circle {
+  stroke: #3b82f6 !important;
+}
+
+.contest-card .circle,
+.contest-section .circle {
+  stroke: #f59e0b !important;
 }
 
 .progress-info {
@@ -884,6 +906,18 @@
   color: var(--success);
 }
 
+.overall-card.completion-card h2 {
+  color: #10b981;
+}
+
+.overall-card.score-card {
+  border-left: 6px solid #8b5cf6;
+}
+
+.overall-card.score-card h2 {
+  color: #8b5cf6;
+}
+
 .attendance-bar {
   background: var(--primary);
 }
@@ -965,4 +999,73 @@
   font-size: 0.75rem;
   font-weight: 800;
   color: var(--text-main);
+}
+
+/* Academic Scoring & Evaluation Styles */
+.header-badges {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.score-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fdf2f8;
+  color: #db2777;
+  padding: 6px 12px;
+  border-radius: 100px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  border: 1px solid #fce7f3;
+}
+
+.score-breakdown-row {
+  margin-top: 20px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.score-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.s-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mini-score-bar {
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.mini-score-bar .fill {
+  height: 100%;
+  background: #94a3b8;
+  border-radius: 3px;
+}
+
+.project-bar .fill {
+  background: #8b5cf6;
+}
+
+.mid-bar .fill {
+  background: #f59e0b;
+}
+
+.end-bar .fill {
+  background: #3b82f6;
 }

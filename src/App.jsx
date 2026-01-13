@@ -29,7 +29,11 @@ import {
   X,
   Save,
   BarChart3,
-  PieChart
+  PieChart,
+  Rocket,
+  Award,
+  CircleDot,
+  Trophy
 } from 'lucide-react';
 
 const DEFAULT_SUBJECTS = [
@@ -200,6 +204,50 @@ function App() {
               onDelete={deleteTask}
               onEdit={setEditingTask}
             />
+            {!activeSubject.includes('Lab') && (
+              <>
+                <TaskSection
+                  title="Mini Projects"
+                  type="project"
+                  activeSubject={activeSubject}
+                  tasks={currentTasks.filter(t => t.type === 'project')}
+                  onAdd={(data) => addTask(activeSubject, 'project', data)}
+                  onUpdate={updateTask}
+                  onDelete={deleteTask}
+                  onEdit={setEditingTask}
+                />
+                <TaskSection
+                  title="Coding Contests"
+                  type="contest"
+                  activeSubject={activeSubject}
+                  tasks={currentTasks.filter(t => t.type === 'contest')}
+                  onAdd={(data) => addTask(activeSubject, 'contest', data)}
+                  onUpdate={updateTask}
+                  onDelete={deleteTask}
+                  onEdit={setEditingTask}
+                />
+                <TaskSection
+                  title="Mid Sem Exam"
+                  type="midSem"
+                  activeSubject={activeSubject}
+                  tasks={currentTasks.filter(t => t.type === 'midSem')}
+                  onAdd={(data) => addTask(activeSubject, 'midSem', data)}
+                  onUpdate={updateTask}
+                  onDelete={deleteTask}
+                  onEdit={setEditingTask}
+                />
+                <TaskSection
+                  title="End Sem Exam"
+                  type="endSem"
+                  activeSubject={activeSubject}
+                  tasks={currentTasks.filter(t => t.type === 'endSem')}
+                  onAdd={(data) => addTask(activeSubject, 'endSem', data)}
+                  onUpdate={updateTask}
+                  onDelete={deleteTask}
+                  onEdit={setEditingTask}
+                />
+              </>
+            )}
           </div>
         )}
       </main>
@@ -464,7 +512,15 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                 <button className="edit-btn" onClick={() => onEdit(task)} title="Edit">
                   <Edit2 size={18} />
                 </button>
-                <button className="delete-btn" onClick={() => onDelete(task.id)} title="Delete">
+                <button
+                  className="delete-btn"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDelete(task.id);
+                  }}
+                  title="Delete"
+                >
                   <Trash2 size={18} />
                 </button>
               </div>
@@ -535,22 +591,88 @@ function EditModal({ task, onClose, onSave }) {
 }
 
 function SummaryView({ tasks, subjects }) {
+  const getSubjectScore = (data, name) => {
+    const isGenAI = name.toLowerCase().includes('genai');
+    const isDM = name.toLowerCase().includes('dm');
+    const isDVA = name.toLowerCase().includes('dva');
+    const isSD = name.toLowerCase().includes('sd');
+
+    const weights = isGenAI ? {
+      attendance: 0.05,
+      assignment: 0.10,
+      project: 0.25,
+      midSem: 0.20,
+      endSem: 0.40
+    } : (isDM || isSD) ? {
+      attendance: 0.05,
+      assignment: 0.10,
+      project: 0.10,
+      contest: 0.15,
+      midSem: 0.20,
+      endSem: 0.40
+    } : isDVA ? {
+      attendance: 0.05,
+      assignment: 0.05,
+      project: 0.20,
+      contest: 0.10,
+      midSem: 0.20,
+      endSem: 0.40
+    } : {
+      attendance: 0.10,
+      assignment: 0.20,
+      quiz: 0.10,
+      project: 0.20,
+      midSem: 0.15,
+      endSem: 0.25
+    };
+
+    // Attendance component (weighted 60/40 for Class/Lab)
+    const currentAtt = ((data.class.attendancePercent || 0) * 0.6) + ((data.lab.attendancePercent || 0) * 0.4);
+
+    // Calculate component scores
+    const attScore = (currentAtt / 100) * weights.attendance * 100;
+    const assScore = ((data.class.assignmentPercent || 0) * 0.5 + (data.lab.assignmentPercent || 0) * 0.5) / 100 * (weights.assignment * 100 || 0);
+    const projScore = ((data.class.projectPercent || 0) * 0.5 + (data.lab.projectPercent || 0) * 0.5) / 100 * (weights.project * 100 || 0);
+    const contScore = ((data.class.contestPercent || 0) * 0.5 + (data.lab.contestPercent || 0) * 0.5) / 100 * (weights.contest * 100 || 0);
+    const midScore = ((data.class.midPercent || 0) * 0.5 + (data.lab.midPercent || 0) * 0.5) / 100 * (weights.midSem * 100 || 0);
+    const endScore = ((data.class.endPercent || 0) * 0.5 + (data.lab.endPercent || 0) * 0.5) / 100 * (weights.endSem * 100 || 0);
+
+    return {
+      finalScore: Math.round(attScore + assScore + projScore + contScore + midScore + endScore),
+      weights
+    };
+  };
+
   const subjectGroups = useMemo(() => {
     const groups = {};
     subjects.forEach(s => {
       const baseName = s.replace(' Class', '').replace(' Lab', '');
       if (!groups[baseName]) groups[baseName] = { class: {}, lab: {} };
 
-      const subjectTasks = tasks.filter(t => t.subjectName === s && t.type === 'lecture');
-      const total = subjectTasks.length;
+      const subjectTasks = tasks.filter(t => t.subjectName === s);
+      const getCompletion = (type) => {
+        const filtered = subjectTasks.filter(t => t.type === type);
+        const total = filtered.length;
+        const done = filtered.filter(t => t.completed).length;
+        return { total, done, percent: total > 0 ? (done / total) * 100 : 0 };
+      };
 
-      const attendanceCount = subjectTasks.filter(t => t.present !== false).length;
-      const completionCount = subjectTasks.filter(t => t.completed === true).length;
+      const lects = subjectTasks.filter(t => t.type === 'lecture');
+      const attCount = lects.filter(t => t.present !== false).length;
 
-      const attendancePercent = total > 0 ? (attendanceCount / total) * 100 : 0;
-      const completionPercent = total > 0 ? (completionCount / total) * 100 : 0;
+      const stats = {
+        total: lects.length,
+        attendanceCount: attCount,
+        attendancePercent: lects.length > 0 ? (attCount / lects.length) * 100 : 0,
+        completionPercent: getCompletion('lecture').percent,
+        completionCount: getCompletion('lecture').done,
+        assignmentPercent: getCompletion('assignment').percent,
+        projectPercent: getCompletion('project').percent,
+        contestPercent: getCompletion('contest').percent,
+        midPercent: subjectTasks.some(t => (t.type === 'midSem' || (t.type === 'exam' && t.name.toLowerCase().includes('mid'))) && t.completed) ? 100 : 0,
+        endPercent: subjectTasks.some(t => (t.type === 'endSem' || (t.type === 'exam' && t.name.toLowerCase().includes('end'))) && t.completed) ? 100 : 0
+      };
 
-      const stats = { total, attendanceCount, completionCount, attendancePercent, completionPercent };
       if (s.includes('Class')) groups[baseName].class = stats;
       else groups[baseName].lab = stats;
     });
@@ -566,20 +688,22 @@ function SummaryView({ tasks, subjects }) {
     let grandTotalCompleted = 0;
 
     const items = Object.entries(subjectGroups).map(([name, data]) => {
-      const attWeighted = (data.class.attendancePercent * 0.6) + (data.lab.attendancePercent * 0.4);
-      const compWeighted = (data.class.completionPercent * 0.5) + (data.lab.completionPercent * 0.5);
+      const attWeighted = ((data.class.attendancePercent || 0) * 0.6) + ((data.lab.attendancePercent || 0) * 0.4);
+      const compWeighted = ((data.class.completionPercent || 0) * 0.5) + ((data.lab.completionPercent || 0) * 0.5);
 
       totalAttendanceWeighted += attWeighted;
       totalCompletionWeighted += compWeighted;
       count++;
 
-      grandTotalLectures += (data.class.total + data.lab.total);
-      grandTotalAttended += (data.class.attendanceCount + data.lab.attendanceCount);
-      grandTotalCompleted += (data.class.completionCount + data.lab.completionCount);
+      grandTotalLectures += ((data.class.total || 0) + (data.lab.total || 0));
+      grandTotalAttended += ((data.class.attendanceCount || 0) + (data.lab.attendanceCount || 0));
+      grandTotalCompleted += ((data.class.completionCount || 0) + (data.lab.completionCount || 0));
 
-      const classGap = data.class.total - data.class.completionCount;
-      const labGap = data.lab.total - data.lab.completionCount;
+      const classGap = (data.class.total || 0) - (data.class.completionCount || 0);
+      const labGap = (data.lab.total || 0) - (data.lab.completionCount || 0);
       const studyGap = classGap + labGap;
+
+      const scoreData = getSubjectScore(data, name);
 
       return {
         name,
@@ -588,17 +712,24 @@ function SummaryView({ tasks, subjects }) {
         ...data,
         studyGap,
         classGap,
-        labGap
+        labGap,
+        score: scoreData.finalScore,
+        weights: scoreData.weights
       };
     });
 
+    const totalProjectedScore = items.reduce((acc, curr) => acc + curr.score, 0);
+    const maxPossibleScore = count * 100;
+
     return {
       items,
-      overallAttendance: count > 0 ? totalAttendanceWeighted / count : 0,
-      overallCompletion: count > 0 ? totalCompletionWeighted / count : 0,
+      overallAttendance: grandTotalLectures > 0 ? (grandTotalAttended / grandTotalLectures) * 100 : 0,
+      overallCompletion: grandTotalLectures > 0 ? (grandTotalCompleted / grandTotalLectures) * 100 : 0,
       grandTotalLectures,
       grandTotalAttended,
-      grandTotalCompleted
+      grandTotalCompleted,
+      totalProjectedScore,
+      maxPossibleScore
     };
   }, [subjectGroups]);
 
@@ -632,6 +763,20 @@ function SummaryView({ tasks, subjects }) {
             <span className="stats-value">{summaryData.grandTotalCompleted}/{summaryData.grandTotalLectures}</span>
           </div>
         </div>
+
+        <div className="overall-card score-card glass shadow-lg">
+          <div className="overall-info">
+            <Award size={40} className="text-warning" />
+            <div>
+              <h2>{summaryData.totalProjectedScore}/{summaryData.maxPossibleScore}</h2>
+              <p>Total Marks</p>
+            </div>
+          </div>
+          <div className="overall-stats-pill">
+            <span className="stats-label">Avg Score</span>
+            <span className="stats-value">{summaryData.maxPossibleScore > 0 ? Math.round((summaryData.totalProjectedScore / summaryData.maxPossibleScore) * 100) : 0}%</span>
+          </div>
+        </div>
       </div>
 
       <div className="subject-grid">
@@ -642,14 +787,18 @@ function SummaryView({ tasks, subjects }) {
                 <h3>{item.name}</h3>
                 <span className="lecture-count-pill">{item.class.total + item.lab.total} Total Lectures</span>
               </div>
-              {item.studyGap > 0 && (
-                <div className="gap-indicator warning">
-                  <AlertCircle size={12} />
-                  <span>
-                    {item.studyGap} Behind ({item.classGap > 0 && `${item.classGap} Class`}{item.classGap > 0 && item.labGap > 0 && ', '}{item.labGap > 0 && `${item.labGap} Lab`})
-                  </span>
+              <div className="header-badges">
+                {item.studyGap > 0 && (
+                  <div className="gap-indicator warning">
+                    <AlertCircle size={12} />
+                    <span>{item.studyGap} Gap ({item.classGap}C/{item.labGap}L)</span>
+                  </div>
+                )}
+                <div className="score-badge">
+                  <Award size={14} />
+                  <span>Marks: {item.score}/100</span>
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="dual-progress-section">
@@ -691,6 +840,35 @@ function SummaryView({ tasks, subjects }) {
                   <div className="detail-bar-bg"><div className="detail-bar completion-bar" style={{ width: `${item.lab.completionPercent}%` }}></div></div>
                 </div>
                 <div className="total-badge comp">Completed: {Math.round(item.compWeighted)}%</div>
+              </div>
+            </div>
+
+            <div className="score-breakdown-row">
+              <div className="score-item">
+                <span className="s-label">Attendance ({Math.round(item.weights.attendance * 100)}%)</span>
+                <div className="mini-score-bar"><div className="fill" style={{ width: `${item.attWeighted}%`, backgroundColor: '#8b5cf6' }}></div></div>
+              </div>
+              <div className="score-item">
+                <span className="s-label">Assignments ({Math.round(item.weights.assignment * 100)}%)</span>
+                <div className="mini-score-bar"><div className="fill" style={{ width: `${item.class.assignmentPercent}%` }}></div></div>
+              </div>
+              <div className="score-item">
+                <span className="s-label">Projects ({Math.round(item.weights.project * 100)}%)</span>
+                <div className="mini-score-bar project-bar"><div className="fill" style={{ width: `${item.class.projectPercent}%` }}></div></div>
+              </div>
+              {item.weights.contest > 0 && (
+                <div className="score-item">
+                  <span className="s-label">Contests ({Math.round(item.weights.contest * 100)}%)</span>
+                  <div className="mini-score-bar contest-bar"><div className="fill" style={{ width: `${item.class.contestPercent}%` }}></div></div>
+                </div>
+              )}
+              <div className="score-item">
+                <span className="s-label">Mid Sem ({Math.round(item.weights.midSem * 100)}%)</span>
+                <div className="mini-score-bar mid-bar"><div className="fill" style={{ width: `${item.class.midPercent}%` }}></div></div>
+              </div>
+              <div className="score-item">
+                <span className="s-label">End Sem ({Math.round(item.weights.endSem * 100)}%)</span>
+                <div className="mini-score-bar end-bar"><div className="fill" style={{ width: `${item.class.endPercent}%` }}></div></div>
               </div>
             </div>
           </div>
