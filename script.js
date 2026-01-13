@@ -141,25 +141,43 @@ function updateSyncStatus(connected) {
 }
 
 function syncWithFirestore() {
-    const q = query(collection(db, "tasks"), orderBy("createdAt", "asc"));
+    // We removed orderBy from the query to ensure local additions with null server timestamps 
+    // are still included in the snapshot. Sorting is now done client-side.
+    const q = query(collection(db, "tasks"));
 
     // Initial status
     updateSyncStatus(false);
 
-    onSnapshot(q, (snapshot) => {
-        updateSyncStatus(true);
+    onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
+        const isOnline = !snapshot.metadata.fromCache;
+        const hasPendingWrites = snapshot.metadata.hasPendingWrites;
+
+        updateSyncStatus(isOnline);
+
+        if (hasPendingWrites) {
+            syncStatus.textContent = "Syncing...";
+            syncStatus.classList.add('syncing');
+        } else if (isOnline) {
+            syncStatus.textContent = "Synced";
+            syncStatus.classList.remove('syncing');
+        }
+
         // Clear lists
         document.querySelectorAll('.lectures, .assignments, .quizzes').forEach(list => list.innerHTML = '');
 
-        snapshot.forEach((doc) => {
-            renderTask(doc.id, doc.data());
+        // Sort documents client-side by createdAt
+        // Documents with null createdAt (pending server timestamp) are put at the end
+        const sortedDocs = [...snapshot.docs].sort((a, b) => {
+            const timeA = a.data().createdAt?.toMillis() || Date.now() + 1000;
+            const timeB = b.data().createdAt?.toMillis() || Date.now() + 1000;
+            return timeA - timeB;
         });
 
-        if (snapshot.metadata.hasPendingWrites) {
-            syncStatus.textContent = "Syncing...";
-        }
+        sortedDocs.forEach((doc) => {
+            renderTask(doc.id, doc.data());
+        });
     }, (error) => {
-        console.error("Firestore Error:", error);
+        console.error("Firestore Listen Error:", error);
         updateSyncStatus(false);
         if (error.code === 'permission-denied') {
             showCustomDialog({
@@ -167,6 +185,8 @@ function syncWithFirestore() {
                 message: "Your Firestore rules are preventing synchronization. <br><br>Please go to your <b>Firebase Console > Firestore Database > Rules</b> and set them to:<br><br><code>allow read, write: if true;</code><br><br>(Or set up proper authentication)",
                 showCancel: false
             });
+        } else {
+            syncStatus.textContent = "Error: " + error.code;
         }
     });
 }
@@ -276,8 +296,11 @@ async function addTask(btn, type) {
             clearDraft(subjectId, dateInput.className);
         }
     } catch (e) {
+        console.error("Add failed:", e);
         if (e.code === 'permission-denied') {
             await showCustomDialog({ title: "Save Failed", message: "Firestore permissions denied. Please check your rules in the Firebase Console.", showCancel: false });
+        } else {
+            alert("Error adding task: " + e.message);
         }
     }
 }
@@ -289,7 +312,12 @@ async function toggleImportant(btn) {
     let isCurrentlyImportant = span.classList.contains('important');
     try {
         await updateDoc(doc(db, "tasks", id), { important: !isCurrentlyImportant });
-    } catch (e) { }
+    } catch (e) {
+        console.error("Update failed:", e);
+        if (e.code === 'permission-denied') {
+            alert("Permission denied. Check Firestore rules.");
+        }
+    }
 }
 
 async function toggleComplete(checkbox) {
@@ -297,7 +325,12 @@ async function toggleComplete(checkbox) {
     let id = task.getAttribute('data-id');
     try {
         await updateDoc(doc(db, "tasks", id), { completed: checkbox.checked });
-    } catch (e) { }
+    } catch (e) {
+        console.error("Update failed:", e);
+        if (e.code === 'permission-denied') {
+            alert("Permission denied. Check Firestore rules.");
+        }
+    }
 }
 
 async function editTask(btn) {
@@ -346,7 +379,14 @@ async function deleteTask(btn) {
     let id = task.getAttribute('data-id');
     let itemText = task.querySelector('span').textContent;
     let confirmDelete = await showCustomDialog({ title: "Confirm Deletion", message: `Delete "${itemText}"?`, showCancel: true });
-    if (confirmDelete) await deleteDoc(doc(db, "tasks", id));
+    if (confirmDelete) {
+        try {
+            await deleteDoc(doc(db, "tasks", id));
+        } catch (e) {
+            console.error("Delete failed:", e);
+            alert("Delete failed: " + e.message);
+        }
+    }
 }
 
 function getTodayString() {
