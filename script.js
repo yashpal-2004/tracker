@@ -1,8 +1,7 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
-import { getFirestore, collection, addDoc, getDocs, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, serverTimestamp, enableMultiTabIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-analytics.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, enableMultiTabIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
-// Firebase configuration
 const firebaseConfig = {
     apiKey: "AIzaSyBdppFyjoBLV4V8C23qxnYVS-ByDKOIcgw",
     authDomain: "nst-tracker.firebaseapp.com",
@@ -13,24 +12,20 @@ const firebaseConfig = {
     measurementId: "G-BNFXRFRBNT"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
 const db = getFirestore(app);
 
-// Enable Multi-Tab Offline Persistence
+// Enable offline persistence for better UX
 enableMultiTabIndexedDbPersistence(db).catch((err) => {
     if (err.code == 'failed-precondition') {
-        console.warn("Persistence failed: Multiple tabs open and persistence already enabled in another tab");
+        console.warn("Multiple tabs open, persistence can only be enabled in one tab at a time.");
     } else if (err.code == 'unimplemented') {
-        console.warn("Persistence failed: Browser doesn't support it");
+        console.warn("The current browser doesn't support all of the features required to enable persistence");
     }
 });
 
-try {
-    getAnalytics(app);
-} catch (e) {
-    console.warn("Analytics failed to load (likely local environment).");
-}
+const TASKS_COLLECTION = collection(db, 'tasks');
 
 let subjectsDiv = document.getElementById("subjects");
 const sidebarList = document.getElementById('sidebarList');
@@ -125,71 +120,37 @@ function initializeDefaultSubjects() {
         let firstId = 'subject-' + defaultSubjects[0].replace(/\s+/g, '-').toLowerCase();
         showSubject(firstId);
     }
-    syncWithFirestore();
+    listenToFirebaseUpdates();
 }
 
 const syncStatus = document.getElementById('syncStatus');
 
-function updateSyncStatus(connected) {
-    if (connected) {
-        syncStatus.textContent = "Synced";
-        syncStatus.className = "sync-status online";
-    } else {
-        syncStatus.textContent = "Offline/Error";
-        syncStatus.className = "sync-status offline";
-    }
+function updateSyncStatus(status = "Online") {
+    syncStatus.textContent = status;
+    syncStatus.className = `sync-status ${status.toLowerCase()}`;
 }
 
-function syncWithFirestore() {
-    // We removed orderBy from the query to ensure local additions with null server timestamps 
-    // are still included in the snapshot. Sorting is now done client-side.
-    const q = query(collection(db, "tasks"));
+function listenToFirebaseUpdates() {
+    updateSyncStatus("Syncing...");
 
-    // Initial status
-    updateSyncStatus(false);
+    const q = query(TASKS_COLLECTION, orderBy('createdAt', 'asc'));
 
-    onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
-        const isOnline = !snapshot.metadata.fromCache;
-        const hasPendingWrites = snapshot.metadata.hasPendingWrites;
-
-        updateSyncStatus(isOnline);
-
-        if (hasPendingWrites) {
-            syncStatus.textContent = "Syncing...";
-            syncStatus.classList.add('syncing');
-        } else if (isOnline) {
-            syncStatus.textContent = "Synced";
-            syncStatus.classList.remove('syncing');
-        }
-
+    onSnapshot(q, (snapshot) => {
         // Clear lists
         document.querySelectorAll('.lectures, .assignments, .quizzes').forEach(list => list.innerHTML = '');
 
-        // Sort documents client-side by createdAt
-        // Documents with null createdAt (pending server timestamp) are put at the end
-        const sortedDocs = [...snapshot.docs].sort((a, b) => {
-            const timeA = a.data().createdAt?.toMillis() || Date.now() + 1000;
-            const timeB = b.data().createdAt?.toMillis() || Date.now() + 1000;
-            return timeA - timeB;
-        });
-
-        sortedDocs.forEach((doc) => {
+        snapshot.forEach((doc) => {
             renderTask(doc.id, doc.data());
         });
+
+        updateSyncStatus("Online");
     }, (error) => {
-        console.error("Firestore Listen Error:", error);
-        updateSyncStatus(false);
-        if (error.code === 'permission-denied') {
-            showCustomDialog({
-                title: "Firebase Permission Error",
-                message: "Your Firestore rules are preventing synchronization. <br><br>Please go to your <b>Firebase Console > Firestore Database > Rules</b> and set them to:<br><br><code>allow read, write: if true;</code><br><br>(Or set up proper authentication)",
-                showCancel: false
-            });
-        } else {
-            syncStatus.textContent = "Error: " + error.code;
-        }
+        console.error("Firebase Snapshot Error:", error);
+        updateSyncStatus("Offline/Error");
     });
 }
+
+// No longer need local storage listeners for tasks
 
 function renderTask(id, data) {
     const { subjectName, type, name, number, date, link, impQs, important, completed } = data;
@@ -272,7 +233,7 @@ async function addTask(btn, type) {
         number: count,
         important: (type !== 'lecture'),
         completed: (type === 'lecture'),
-        createdAt: serverTimestamp()
+        createdAt: Date.now()
     };
 
     if (type === 'lecture' && dateInput) taskData.date = dateInput.value;
@@ -280,7 +241,8 @@ async function addTask(btn, type) {
     if (impQsInput) taskData.impQs = impQsInput.value.trim();
 
     try {
-        await addDoc(collection(db, "tasks"), taskData);
+        await addDoc(TASKS_COLLECTION, taskData);
+
         input.value = "";
         clearDraft(subjectId, input.className);
         if (linkInput) {
@@ -296,27 +258,18 @@ async function addTask(btn, type) {
             clearDraft(subjectId, dateInput.className);
         }
     } catch (e) {
-        console.error("Add failed:", e);
-        if (e.code === 'permission-denied') {
-            await showCustomDialog({ title: "Save Failed", message: "Firestore permissions denied. Please check your rules in the Firebase Console.", showCancel: false });
-        } else {
-            alert("Error adding task: " + e.message);
-        }
+        console.error("Error adding document: ", e);
     }
 }
 
 async function toggleImportant(btn) {
     let task = btn.parentElement;
     let id = task.getAttribute('data-id');
-    let span = task.querySelector('span');
-    let isCurrentlyImportant = span.classList.contains('important');
+    const isCurrentlyImportant = btn.classList.contains('active');
     try {
-        await updateDoc(doc(db, "tasks", id), { important: !isCurrentlyImportant });
+        await updateDoc(doc(db, 'tasks', id), { important: !isCurrentlyImportant });
     } catch (e) {
-        console.error("Update failed:", e);
-        if (e.code === 'permission-denied') {
-            alert("Permission denied. Check Firestore rules.");
-        }
+        console.error("Error updating document: ", e);
     }
 }
 
@@ -324,12 +277,9 @@ async function toggleComplete(checkbox) {
     let task = checkbox.parentElement;
     let id = task.getAttribute('data-id');
     try {
-        await updateDoc(doc(db, "tasks", id), { completed: checkbox.checked });
+        await updateDoc(doc(db, 'tasks', id), { completed: checkbox.checked });
     } catch (e) {
-        console.error("Update failed:", e);
-        if (e.code === 'permission-denied') {
-            alert("Permission denied. Check Firestore rules.");
-        }
+        console.error("Error updating document: ", e);
     }
 }
 
@@ -370,7 +320,11 @@ async function editTask(btn) {
     }
 
     if (Object.keys(updates).length > 0) {
-        await updateDoc(doc(db, "tasks", id), updates);
+        try {
+            await updateDoc(doc(db, 'tasks', id), updates);
+        } catch (e) {
+            console.error("Error updating document: ", e);
+        }
     }
 }
 
@@ -381,10 +335,9 @@ async function deleteTask(btn) {
     let confirmDelete = await showCustomDialog({ title: "Confirm Deletion", message: `Delete "${itemText}"?`, showCancel: true });
     if (confirmDelete) {
         try {
-            await deleteDoc(doc(db, "tasks", id));
+            await deleteDoc(doc(db, 'tasks', id));
         } catch (e) {
-            console.error("Delete failed:", e);
-            alert("Delete failed: " + e.message);
+            console.error("Error deleting document: ", e);
         }
     }
 }
