@@ -368,6 +368,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  cursor: pointer;
 }
 
 .col-completion {
@@ -376,6 +377,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  cursor: pointer;
 }
 
 .col-actions {
@@ -888,6 +890,28 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.completion-summary .overall-card {
+  border-top: 4px solid var(--success);
+}
+
+.completion-summary .text-success {
+  color: var(--success) !important;
+}
+
+.completion-summary .stats-value {
+  color: var(--success);
+}
+
+.completion-summary .class-bar,
+.completion-summary .lab-bar {
+  background: var(--success);
+  opacity: 0.8;
+}
+
+.completion-summary .lab-bar {
+  opacity: 0.6;
 }
 
 /* New Summary Stats Styles */
