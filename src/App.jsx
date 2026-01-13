@@ -303,6 +303,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
   const [val, setVal] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [link, setLink] = useState('');
+  const [notionLink, setNotionLink] = useState('');
   const [impQs, setImpQs] = useState('');
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -320,6 +321,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
       const d = drafts[key];
       setVal(d.val || '');
       setLink(d.link || '');
+      setNotionLink(d.notionLink || '');
       setImpQs(d.impQs || '');
       if (d.date) setDate(d.date);
     }
@@ -332,9 +334,9 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
 
     const drafts = JSON.parse(localStorage.getItem('inputDrafts') || '{}');
     const key = `${activeSubject}_${type}`;
-    drafts[key] = { val, link, impQs, date };
+    drafts[key] = { val, link, notionLink, impQs, date };
     localStorage.setItem('inputDrafts', JSON.stringify(drafts));
-  }, [val, link, impQs, date, activeSubject, type, isLoaded]);
+  }, [val, link, notionLink, impQs, date, activeSubject, type, isLoaded]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -345,6 +347,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     if (type === 'lecture') {
       data.date = date;
       data.notes = link;
+      data.notionUrl = notionLink;
     }
     if (type === 'assignment' || type === 'quiz') data.link = link;
     if (type === 'quiz') data.impQs = impQs;
@@ -352,6 +355,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     onAdd(data);
     setVal('');
     setLink('');
+    setNotionLink('');
     setImpQs('');
   };
 
@@ -407,10 +411,17 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
           />
         )}
         <input
-          placeholder={type === 'lecture' ? "Notes URL (optional)" : "Link (optional)"}
+          placeholder={type === 'lecture' ? "Lecture/Notes Link (optional)" : "Link (optional)"}
           value={link}
           onChange={e => setLink(e.target.value)}
         />
+        {type === 'lecture' && (
+          <input
+            placeholder="Notion Notes URL (optional)"
+            value={notionLink}
+            onChange={e => setNotionLink(e.target.value)}
+          />
+        )}
         {type === 'quiz' && (
           <input
             placeholder="Imp Qs"
@@ -441,16 +452,23 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
             <div className="col-name">
               <span className={`task-name ${task.important ? 'important' : ''}`}>
                 {type === 'lecture' ? (
-                  task.notes ? (
-                    <a href={task.notes} target="_blank" rel="noreferrer" className="lecture-link">
-                      {task.name}
-                      <ExternalLink size={14} />
-                    </a>
-                  ) : (
-                    <span className="no-notes">
-                      {task.name} <em style={{ fontSize: '0.8em', opacity: 0.6 }}>(No Notes)</em>
-                    </span>
-                  )
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    {task.notes ? (
+                      <a href={task.notes} target="_blank" rel="noreferrer" className="lecture-link">
+                        {task.name}
+                        <ExternalLink size={14} />
+                      </a>
+                    ) : (
+                      <span className="no-notes">
+                        {task.name} <em style={{ fontSize: '0.8em', opacity: 0.6 }}>(No Link)</em>
+                      </span>
+                    )}
+                    {task.notionUrl && (
+                      <a href={task.notionUrl} target="_blank" rel="noreferrer" className="notion-link" title="Open Notion Notes">
+                        <NotionLogo size={15} />
+                      </a>
+                    )}
+                  </div>
                 ) : (
                   task.link ? (
                     <a href={task.link} target="_blank" rel="noreferrer">
@@ -537,6 +555,7 @@ function EditModal({ task, onClose, onSave }) {
   const [number, setNumber] = useState(task.number);
   const [date, setDate] = useState(task.date || '');
   const [link, setLink] = useState(task.link || task.notes || '');
+  const [notionLink, setNotionLink] = useState(task.notionUrl || '');
   const [impQs, setImpQs] = useState(task.impQs || '');
 
   return (
@@ -555,8 +574,10 @@ function EditModal({ task, onClose, onSave }) {
             <>
               <label>Date</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-              <label>Notes URL</label>
+              <label>Lecture Link / Notes URL</label>
               <input value={link} onChange={e => setLink(e.target.value)} />
+              <label>Notion Notes URL</label>
+              <input value={notionLink} onChange={e => setNotionLink(e.target.value)} />
             </>
           )}
           {(task.type === 'assignment' || task.type === 'quiz') && (
@@ -578,6 +599,7 @@ function EditModal({ task, onClose, onSave }) {
             number,
             date,
             [task.type === 'lecture' ? 'notes' : 'link']: link,
+            notionUrl: notionLink,
             impQs
           })}>
             <Save size={18} />
@@ -669,8 +691,8 @@ function SummaryView({ tasks, subjects }) {
         assignmentPercent: getCompletion('assignment').percent,
         projectPercent: getCompletion('project').percent,
         contestPercent: getCompletion('contest').percent,
-        midPercent: subjectTasks.some(t => (t.type === 'midSem' || (t.type === 'exam' && t.name.toLowerCase().includes('mid'))) && t.completed) ? 100 : 0,
-        endPercent: subjectTasks.some(t => (t.type === 'endSem' || (t.type === 'exam' && t.name.toLowerCase().includes('end'))) && t.completed) ? 100 : 0
+        midPercent: subjectTasks.some(t => t.type === 'midSem' && t.completed) ? 100 : 0,
+        endPercent: subjectTasks.some(t => t.type === 'endSem' && t.completed) ? 100 : 0
       };
 
       if (s.includes('Class')) groups[baseName].class = stats;
@@ -877,6 +899,19 @@ function SummaryView({ tasks, subjects }) {
     </div>
   );
 }
+
+const NotionLogo = ({ size = 16, className = "" }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className={className}
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.217-.793c.28 0 .047-.28.047-.326L20.103.872c0-.093-.42-.14-.56-.14l-14.731.98c-1.167.093-1.68.42-2.194 1.166l-1.587 2.145c0 .047-.14.187.093.187.14 0 .374 0 .56-.14l2.775-1.074.047.234v13.61c0 .56-.327.933-1.074 1.353l-1.353.7c-.187.093-.233.28-.047.373l6.994 3.123c.28.14.467.047.467-.186V8.97l6.621 11.236c.233.373.513.56.98.513l4.195-.187c.233 0 .42-.14.42-.42V4.954c0-.56.327-.933 1.073-1.353l1.354-.7c.186-.093.233-.28.046-.373l-6.994-3.123c-.28-.14-.466-.047-.466.186v11.7l-6.621-11.236c-.234-.373-.514-.56-.98-.513l-4.196.187c-.233 0-.42.14-.42.42v15.201l.047-.234-2.775 1.073z" />
+  </svg>
+);
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
