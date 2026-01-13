@@ -374,6 +374,13 @@
   flex-shrink: 0;
 }
 
+.col-subject {
+  width: 120px;
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
 .col-name {
   flex: 1;
   min-width: 130px;
@@ -686,7 +693,8 @@
     flex: 1;
   }
 
-  .col-date {
+  .col-date,
+  .col-subject {
     display: none;
   }
 
