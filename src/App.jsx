@@ -41,7 +41,7 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [activeSubject, setActiveSubject] = useState(() => {
     const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Summary' || hash === 'Completion') return hash;
+    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Analytics') return hash;
     return localStorage.getItem('active_subject') || DEFAULT_SUBJECTS[0];
   });
 
@@ -91,7 +91,7 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Summary' || hash === 'Completion') setActiveSubject(hash);
+      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Analytics') setActiveSubject(hash);
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -148,7 +148,7 @@ function App() {
       <main className="main-content">
         <header className="main-header">
           <div className="title-group">
-            <h1>{activeSubject === 'Summary' ? 'Attendance Analytics' : activeSubject === 'Completion' ? 'Completion Analytics' : activeSubject}</h1>
+            <h1>{activeSubject === 'Analytics' ? 'Overall Analytics' : activeSubject}</h1>
             <div className={`sync-badge ${syncStatus.toLowerCase().includes('error') ? 'error' : ''} ${syncStatus.toLowerCase().includes('up to date') ? 'online' : ''}`}>
               {syncStatus.toLowerCase().includes('connecting') ? <Loader2 size={14} className="spin" /> :
                 syncStatus.toLowerCase().includes('error') ? <AlertCircle size={14} /> :
@@ -166,8 +166,8 @@ function App() {
           </div>
         </header>
 
-        {(activeSubject === 'Summary' || activeSubject === 'Completion') ? (
-          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} mode={activeSubject === 'Summary' ? 'attendance' : 'completion'} />
+        {activeSubject === 'Analytics' ? (
+          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} />
         ) : (
           <div className="sections-container">
             <TaskSection
@@ -227,20 +227,12 @@ function Sidebar({ subjects, activeSubject, onSelect }) {
       </div>
       <nav className="subject-list">
         <button
-          className={`subject-btn summary-btn ${activeSubject === 'Summary' ? 'active' : ''}`}
-          onClick={() => onSelect('Summary')}
+          className={`subject-btn summary-btn ${activeSubject === 'Analytics' ? 'active' : ''}`}
+          onClick={() => onSelect('Analytics')}
         >
           <BarChart3 size={18} />
-          <span>Attendance Summary</span>
-          {activeSubject === 'Summary' && <ChevronRight size={14} className="active-arrow" />}
-        </button>
-        <button
-          className={`subject-btn completion-summary-btn ${activeSubject === 'Completion' ? 'active' : ''}`}
-          onClick={() => onSelect('Completion')}
-        >
-          <CheckCircle2 size={18} />
-          <span>Completion Summary</span>
-          {activeSubject === 'Completion' && <ChevronRight size={14} className="active-arrow" />}
+          <span>Analytics Dashboard</span>
+          {activeSubject === 'Analytics' && <ChevronRight size={14} className="active-arrow" />}
         </button>
         <div className="sidebar-divider">Subjects</div>
         {subjects.map(subject => (
@@ -542,84 +534,103 @@ function EditModal({ task, onClose, onSave }) {
   );
 }
 
-function SummaryView({ tasks, subjects, mode = 'attendance' }) {
-  const isAttendance = mode === 'attendance';
-
+function SummaryView({ tasks, subjects }) {
   const subjectGroups = useMemo(() => {
     const groups = {};
     subjects.forEach(s => {
       const baseName = s.replace(' Class', '').replace(' Lab', '');
-      if (!groups[baseName]) groups[baseName] = { class: null, lab: null };
+      if (!groups[baseName]) groups[baseName] = { class: {}, lab: {} };
 
       const subjectTasks = tasks.filter(t => t.subjectName === s && t.type === 'lecture');
-      const countProp = isAttendance ? 'present' : 'completed';
-      const positiveCount = subjectTasks.filter(t => isAttendance ? t[countProp] !== false : t[countProp] === true).length;
       const total = subjectTasks.length;
-      const percent = total > 0 ? (positiveCount / total) * 100 : 0;
 
-      if (s.includes('Class')) groups[baseName].class = { percent, total, count: positiveCount };
-      else groups[baseName].lab = { percent, total, count: positiveCount };
+      const attendanceCount = subjectTasks.filter(t => t.present !== false).length;
+      const completionCount = subjectTasks.filter(t => t.completed === true).length;
+
+      const attendancePercent = total > 0 ? (attendanceCount / total) * 100 : 0;
+      const completionPercent = total > 0 ? (completionCount / total) * 100 : 0;
+
+      const stats = { total, attendanceCount, completionCount, attendancePercent, completionPercent };
+      if (s.includes('Class')) groups[baseName].class = stats;
+      else groups[baseName].lab = stats;
     });
     return groups;
-  }, [tasks, subjects, isAttendance]);
+  }, [tasks, subjects]);
 
   const summaryData = useMemo(() => {
-    let totalWeighted = 0;
+    let totalAttendanceWeighted = 0;
+    let totalCompletionWeighted = 0;
     let count = 0;
     let grandTotalLectures = 0;
-    let grandTotalPositive = 0;
+    let grandTotalAttended = 0;
+    let grandTotalCompleted = 0;
 
     const items = Object.entries(subjectGroups).map(([name, data]) => {
-      const classWeight = isAttendance ? 0.6 : 0.5;
-      const labWeight = isAttendance ? 0.4 : 0.5;
+      const attWeighted = (data.class.attendancePercent * 0.6) + (data.lab.attendancePercent * 0.4);
+      const compWeighted = (data.class.completionPercent * 0.5) + (data.lab.completionPercent * 0.5);
 
-      const weighted = (data.class.percent * classWeight) + (data.lab.percent * labWeight);
-      totalWeighted += weighted;
+      totalAttendanceWeighted += attWeighted;
+      totalCompletionWeighted += compWeighted;
       count++;
 
       grandTotalLectures += (data.class.total + data.lab.total);
-      grandTotalPositive += (data.class.count + data.lab.count);
+      grandTotalAttended += (data.class.attendanceCount + data.lab.attendanceCount);
+      grandTotalCompleted += (data.class.completionCount + data.lab.completionCount);
 
-      return { name, weighted, ...data };
+      const classGap = data.class.total - data.class.completionCount;
+      const labGap = data.lab.total - data.lab.completionCount;
+      const studyGap = classGap + labGap;
+
+      return {
+        name,
+        attWeighted,
+        compWeighted,
+        ...data,
+        studyGap,
+        classGap,
+        labGap
+      };
     });
 
     return {
       items,
-      overall: count > 0 ? totalWeighted / count : 0,
+      overallAttendance: count > 0 ? totalAttendanceWeighted / count : 0,
+      overallCompletion: count > 0 ? totalCompletionWeighted / count : 0,
       grandTotalLectures,
-      grandTotalPositive
+      grandTotalAttended,
+      grandTotalCompleted
     };
-  }, [subjectGroups, isAttendance]);
-
-  const mainIcon = isAttendance ? <PieChart size={48} className="text-primary" /> : <CheckCircle2 size={48} className="text-success" />;
-  const overallLabel = isAttendance ? 'Overall Attendance Score' : 'Overall Completion Score';
+  }, [subjectGroups]);
 
   return (
-    <div className={`summary-container ${mode}-summary`}>
-      <div className="overall-card glass shadow-lg">
-        <div className="overall-info">
-          {mainIcon}
-          <div>
-            <h2>{Math.round(summaryData.overall)}%</h2>
-            <p>{overallLabel}</p>
+    <div className="summary-container unified-summary">
+      <div className="overall-grid">
+        <div className="overall-card attendance-card glass shadow-lg">
+          <div className="overall-info">
+            <PieChart size={40} className="text-primary" />
+            <div>
+              <h2>{Math.round(summaryData.overallAttendance)}%</h2>
+              <p>Overall Attendance</p>
+            </div>
+          </div>
+          <div className="overall-stats-pill">
+            <span className="stats-label">Lectures Attended</span>
+            <span className="stats-value">{summaryData.grandTotalAttended}/{summaryData.grandTotalLectures}</span>
           </div>
         </div>
-        <div className="overall-stats-pill">
-          <span className="stats-label">{isAttendance ? 'Total Lectures Attended' : 'Total Lectures Completed'}</span>
-          <span className="stats-value">{summaryData.grandTotalPositive}/{summaryData.grandTotalLectures}</span>
-        </div>
-        <div className="weight-legend">
-          {isAttendance ? (
-            <>
-              <span><Hash size={12} /> Class: 60%</span>
-              <span><Hash size={12} /> Lab: 40%</span>
-            </>
-          ) : (
-            <>
-              <span><Hash size={12} /> Class: 50%</span>
-              <span><Hash size={12} /> Lab: 50%</span>
-            </>
-          )}
+
+        <div className="overall-card completion-card glass shadow-lg">
+          <div className="overall-info">
+            <CheckCircle2 size={40} className="text-success" />
+            <div>
+              <h2>{Math.round(summaryData.overallCompletion)}%</h2>
+              <p>Overall Completion</p>
+            </div>
+          </div>
+          <div className="overall-stats-pill">
+            <span className="stats-label">Lectures Done</span>
+            <span className="stats-value">{summaryData.grandTotalCompleted}/{summaryData.grandTotalLectures}</span>
+          </div>
         </div>
       </div>
 
@@ -627,34 +638,59 @@ function SummaryView({ tasks, subjects, mode = 'attendance' }) {
         {summaryData.items.map(item => (
           <div key={item.name} className="subject-card glass">
             <div className="subject-card-header">
-              <h3>{item.name}</h3>
-              <div className="subject-header-right">
-                <span className="lecture-count-pill">{item.class.total + item.lab.total} Lectures</span>
-                <span className={`status-badge ${item.weighted >= 75 ? 'success' : 'warning'}`}>
-                  {Math.round(item.weighted)}% Total
-                </span>
+              <div className="subj-title-group">
+                <h3>{item.name}</h3>
+                <span className="lecture-count-pill">{item.class.total + item.lab.total} Total Lectures</span>
               </div>
+              {item.studyGap > 0 && (
+                <div className="gap-indicator warning">
+                  <AlertCircle size={12} />
+                  <span>
+                    {item.studyGap} Behind ({item.classGap > 0 && `${item.classGap} Class`}{item.classGap > 0 && item.labGap > 0 && ', '}{item.labGap > 0 && `${item.labGap} Lab`})
+                  </span>
+                </div>
+              )}
             </div>
-            <div className="subject-details">
-              <div className="detail-row">
-                <div className="detail-label">
-                  <span>Class ({isAttendance ? '60%' : '50%'})</span>
-                  <span className="count-small">{item.class.count}/{item.class.total}</span>
+
+            <div className="dual-progress-section">
+              <div className="metric-column">
+                <span className="metric-hdr">Attendance (60/40)</span>
+                <div className="detail-row">
+                  <div className="detail-label">
+                    <span>Class</span>
+                    <span className="count-small">{item.class.attendanceCount}/{item.class.total}</span>
+                  </div>
+                  <div className="detail-bar-bg"><div className="detail-bar class-bar" style={{ width: `${item.class.attendancePercent}%` }}></div></div>
                 </div>
-                <div className="detail-bar-bg">
-                  <div className="detail-bar class-bar" style={{ width: `${item.class.percent}%` }}></div>
+                <div className="detail-row">
+                  <div className="detail-label">
+                    <span>Lab</span>
+                    <span className="count-small">{item.lab.attendanceCount}/{item.lab.total}</span>
+                  </div>
+                  <div className="detail-bar-bg"><div className="detail-bar lab-bar" style={{ width: `${item.lab.attendancePercent}%` }}></div></div>
                 </div>
-                <span className="detail-value">{Math.round(item.class.percent)}%</span>
+                <div className="total-badge att">Attended: {Math.round(item.attWeighted)}%</div>
               </div>
-              <div className="detail-row">
-                <div className="detail-label">
-                  <span>Lab ({isAttendance ? '40%' : '50%'})</span>
-                  <span className="count-small">{item.lab.count}/{item.lab.total}</span>
+
+              <div className="vertical-divider"></div>
+
+              <div className="metric-column">
+                <span className="metric-hdr">Completion (50/50)</span>
+                <div className="detail-row">
+                  <div className="detail-label">
+                    <span>Class</span>
+                    <span className="count-small">{item.class.completionCount}/{item.class.total}</span>
+                  </div>
+                  <div className="detail-bar-bg"><div className="detail-bar completion-bar" style={{ width: `${item.class.completionPercent}%` }}></div></div>
                 </div>
-                <div className="detail-bar-bg">
-                  <div className="detail-bar lab-bar" style={{ width: `${item.lab.percent}%` }}></div>
+                <div className="detail-row">
+                  <div className="detail-label">
+                    <span>Lab</span>
+                    <span className="count-small">{item.lab.completionCount}/{item.lab.total}</span>
+                  </div>
+                  <div className="detail-bar-bg"><div className="detail-bar completion-bar" style={{ width: `${item.lab.completionPercent}%` }}></div></div>
                 </div>
-                <span className="detail-value">{Math.round(item.lab.percent)}%</span>
+                <div className="total-badge comp">Completed: {Math.round(item.compWeighted)}%</div>
               </div>
             </div>
           </div>
