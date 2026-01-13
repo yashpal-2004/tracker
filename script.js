@@ -121,21 +121,50 @@ function initializeDefaultSubjects() {
         showSubject(firstId);
     }
     listenToFirebaseUpdates();
+    migrateLocalStorageToFirebase();
+}
+
+async function migrateLocalStorageToFirebase() {
+    const TASKS_KEY = 'study_tracker_tasks';
+    const localTasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
+
+    if (localTasks.length > 0) {
+        const confirmMigrate = confirm(`You have ${localTasks.length} tasks stored locally. Would you like to sync them to the cloud so they appear on all your devices?`);
+        if (confirmMigrate) {
+            updateSyncStatus("Migrating...");
+            for (const task of localTasks) {
+                // Remove local-only ID, let Firestore generate one
+                const { id, ...taskData } = task;
+                if (!taskData.createdAt) taskData.createdAt = Date.now();
+                try {
+                    await addDoc(TASKS_COLLECTION, taskData);
+                } catch (e) {
+                    console.error("Migration error:", e);
+                }
+            }
+            localStorage.removeItem(TASKS_KEY);
+            alert("Migration complete! Your data is now in the cloud.");
+        }
+    }
 }
 
 const syncStatus = document.getElementById('syncStatus');
 
 function updateSyncStatus(status = "Online") {
     syncStatus.textContent = status;
-    syncStatus.className = `sync-status ${status.toLowerCase()}`;
+    // Normalize class name for CSS (e.g. "Error: 403" -> "error")
+    const statusClass = status.split(':')[0].trim().toLowerCase();
+    syncStatus.className = `sync-status ${statusClass}`;
 }
 
 function listenToFirebaseUpdates() {
+    console.log("Starting Firebase listener...");
     updateSyncStatus("Syncing...");
 
     const q = query(TASKS_COLLECTION, orderBy('createdAt', 'asc'));
 
     onSnapshot(q, (snapshot) => {
+        console.log("Received snapshot, doc count:", snapshot.docs.length);
         // Clear lists
         document.querySelectorAll('.lectures, .assignments, .quizzes').forEach(list => list.innerHTML = '');
 
@@ -146,7 +175,11 @@ function listenToFirebaseUpdates() {
         updateSyncStatus("Online");
     }, (error) => {
         console.error("Firebase Snapshot Error:", error);
-        updateSyncStatus("Offline/Error");
+        updateSyncStatus("Error: " + error.code);
+
+        if (error.code === 'permission-denied') {
+            alert("Firestore Permission Denied. Please check your security rules.");
+        }
     });
 }
 
