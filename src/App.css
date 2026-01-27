@@ -1070,6 +1070,14 @@
   background: #8b5cf6;
 }
 
+.assignment-bar .fill {
+  background: #6366f1;
+}
+
+.contest-bar .fill {
+  background: #10b981;
+}
+
 .mid-bar .fill {
   background: #f59e0b;
 }
@@ -1078,15 +1086,107 @@
   background: #3b82f6;
 }
 
-/* Notion Link Styles */
-.notion-link {
-  color: #000 !important;
-  display: inline-flex;
+.dhruv-attendance-card {
+  border-left: 6px solid #f59e0b !important;
+}
+
+.dhruv-card-label {
+  background: #fdf6e3;
+  color: #b45309;
+}
+
+.score-badge {
+  display: flex;
   align-items: center;
-  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-  opacity: 0.7;
-  padding: 2px;
-  border-radius: 4px;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 100px;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.checkbox-wrapper {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  background: white;
+}
+
+.checkbox-wrapper:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.checkbox-wrapper.checked {
+  border-color: #10b981;
+  background: #f0fdf4;
+}
+
+.bookmark-bar {
+  margin-bottom: 24px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  width: fit-content;
+}
+
+.bookmark-items {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bookmark-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.bookmark-item:hover {
+  background: white;
+  color: var(--primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.bookmark-divider {
+  width: 1px;
+  height: 16px;
+  background: #e2e8f0;
+}
+
+.sidebar-divider {
+  margin: 24px 16px 12px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #eef2f6;
 }
 
 .notion-link:hover {

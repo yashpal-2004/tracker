@@ -1,4 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import {
+  BarChart as ReBarChart,
+  Bar as ReBar,
+  XAxis as ReXAxis,
+  YAxis as ReYAxis,
+  CartesianGrid,
+  Tooltip as ReTooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell,
+  ComposedChart,
+  Area
+} from 'recharts';
 import './App.css';
 import { db, TASKS_COLLECTION } from './firebase';
 import {
@@ -33,7 +46,10 @@ import {
   Rocket,
   Award,
   Trophy,
-  Layers
+  Layers,
+  Check,
+  MessageSquare,
+  Link2
 } from 'lucide-react';
 
 const DEFAULT_SUBJECTS = [
@@ -115,6 +131,14 @@ function App() {
     };
     try {
       await addDoc(TASKS_COLLECTION, newTask);
+
+      // Delta Sync for Dhruv
+      if (type === 'lecture' && newTask.present !== false) {
+        const fm = tasks.find(t => t.type === 'friend_meta' && t.subjectName === subjectName);
+        if (fm && fm.attendanceCount !== undefined) {
+          await updateDoc(doc(db, 'tasks', fm.id), { attendanceCount: fm.attendanceCount + 1 });
+        }
+      }
     } catch (e) {
       console.error("Error adding document: ", e);
     }
@@ -122,7 +146,19 @@ function App() {
 
   const updateTask = async (id, updates) => {
     try {
-      await updateDoc(doc(db, 'tasks', id), updates);
+      const task = tasks.find(t => t.id === id);
+      const res = await updateDoc(doc(db, 'tasks', id), updates);
+
+      // Delta Sync for Dhruv
+      if (task && task.type === 'lecture' && 'present' in updates) {
+        if (task.present !== updates.present) {
+          const delta = updates.present ? 1 : -1;
+          const fm = tasks.find(t => t.type === 'friend_meta' && t.subjectName === task.subjectName);
+          if (fm && fm.attendanceCount !== undefined) {
+            await updateDoc(doc(db, 'tasks', fm.id), { attendanceCount: (fm.attendanceCount || 0) + delta });
+          }
+        }
+      }
     } catch (e) {
       console.error("Error updating document: ", e);
     }
@@ -131,15 +167,39 @@ function App() {
   const deleteTask = async (id) => {
     if (window.confirm('Delete this task?')) {
       try {
+        const task = tasks.find(t => t.id === id);
         await deleteDoc(doc(db, 'tasks', id));
+
+        // Delta Sync for Dhruv
+        if (task && task.type === 'lecture' && task.present !== false) {
+          const fm = tasks.find(t => t.type === 'friend_meta' && t.subjectName === task.subjectName);
+          if (fm && fm.attendanceCount !== undefined) {
+            await updateDoc(doc(db, 'tasks', fm.id), { attendanceCount: Math.max(0, (fm.attendanceCount || 0) - 1) });
+          }
+        }
       } catch (e) {
         console.error("Error deleting document: ", e);
       }
     }
   };
 
+  const friendMetaDoc = useMemo(() => {
+    return tasks.find(t => t.type === 'friend_meta' && t.subjectName === activeSubject);
+  }, [tasks, activeSubject]);
+
+  const updateFriendMeta = async (updates) => {
+    if (friendMetaDoc) {
+      await updateTask(friendMetaDoc.id, updates);
+    } else {
+      await addTask(activeSubject, 'friend_meta', updates);
+    }
+  };
+
   const currentTasks = useMemo(() => {
-    return tasks.filter(t => t.subjectName === activeSubject);
+    if (activeSubject === 'Analytics' || activeSubject === 'All Lectures') {
+      return tasks.filter(t => t.type !== 'friend_meta');
+    }
+    return tasks.filter(t => t.subjectName === activeSubject && t.type !== 'friend_meta');
   }, [tasks, activeSubject]);
 
   return (
@@ -150,6 +210,7 @@ function App() {
         onSelect={setActiveSubject}
       />
       <main className="main-content">
+        <BookmarkBar />
         <header className="main-header">
           <div className="title-group">
             <h1>{activeSubject === 'Analytics' ? 'Overall Analytics' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject}</h1>
@@ -186,6 +247,8 @@ function App() {
               type="lecture"
               activeSubject={activeSubject}
               tasks={currentTasks.filter(t => t.type === 'lecture')}
+              friendMeta={friendMetaDoc}
+              onUpdateFriendMeta={updateFriendMeta}
               onAdd={(data) => addTask(activeSubject, 'lecture', data)}
               onUpdate={updateTask}
               onDelete={deleteTask}
@@ -315,7 +378,45 @@ function Sidebar({ subjects, activeSubject, onSelect }) {
   );
 }
 
-function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, activeSubject }) {
+function BookmarkBar() {
+  return (
+    <div className="bookmark-bar glass">
+      <div className="bookmark-items">
+        <a
+          href="https://my.newtonschool.co/course/8adqgomb044s/details"
+          target="_blank"
+          rel="noreferrer"
+          className="bookmark-item"
+        >
+          <Rocket size={14} />
+          <span>Newton Portal</span>
+        </a>
+        <div className="bookmark-divider"></div>
+        <a
+          href="https://www.notion.so/Sem-4-2df73a32749f80518d92d53951340894"
+          target="_blank"
+          rel="noreferrer"
+          className="bookmark-item"
+        >
+          <FileText size={14} />
+          <span>Notion Sem 4</span>
+        </a>
+        <div className="bookmark-divider"></div>
+        <a
+          href="https://chatgpt.com/g/g-69784d86478081919281e702b0f97dea-academic-pdf-notes-builder"
+          target="_blank"
+          rel="noreferrer"
+          className="bookmark-item"
+        >
+          <MessageSquare size={14} />
+          <span>Notes Builder AI</span>
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, activeSubject, friendMeta, onUpdateFriendMeta }) {
   const [val, setVal] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [link, setLink] = useState('');
@@ -384,17 +485,22 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
         </div>
         <div className="progress-group">
           {type === 'lecture' && (
-            <div className="progress-card attendance-card">
-              <div className="card-top-label">ATTENDANCE</div>
-              <div className="progress-circle-container">
-                <svg className="progress-circle" viewBox="0 0 36 36">
-                  <path className="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                  <path className="circle attendance-path" strokeDasharray={`${attendPercent}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                </svg>
-              </div>
-              <div className="progress-info">
-                <span className="progress-percent">{attendPercent}%</span>
-                <span className="progress-count">{presentCount}/{totalCount} Attended</span>
+            <div className="progress-card attendance-card dhruv-attendance-card" style={{ borderColor: '#f59e0b' }}>
+              <div className="card-top-label" style={{ color: '#d97706', background: '#fffbeb' }}>DHRUV ATTENDANCE</div>
+              <div className="progress-info" style={{ marginTop: '0', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="number"
+                    value={friendMeta?.attendanceCount ?? presentCount}
+                    onChange={e => onUpdateFriendMeta({ attendanceCount: parseInt(e.target.value) || 0 })}
+                    placeholder={presentCount}
+                    style={{ width: '50px', padding: '4px', border: '1px solid #fcd34d', borderRadius: '6px', fontWeight: 800, textAlign: 'center', background: '#fffbeb' }}
+                  />
+                  <span style={{ fontSize: '0.85em', fontWeight: 600 }}>/ {totalCount}</span>
+                </div>
+                <div className="progress-percent" style={{ color: '#d97706', fontSize: '1.1rem' }}>
+                  {totalCount > 0 ? Math.round(((friendMeta?.attendanceCount ?? presentCount) / totalCount) * 100) : 0}%
+                </div>
               </div>
             </div>
           )}
@@ -457,7 +563,8 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
           <span className="col-name">Name</span>
           {type === 'lecture' && <span className="col-date">Date</span>}
           {type === 'lecture' && <span className="col-attendance">Attendance</span>}
-          <span className="col-completion">{type === 'lecture' ? 'Completed' : 'Status'}</span>
+          <span className="col-completion">{type === 'lecture' ? 'Completed' : 'Status (You)'}</span>
+          {type !== 'lecture' && <span className="col-completion" style={{ color: '#f59e0b' }}>Status (D)</span>}
           <span className="col-actions">Actions</span>
         </div>
         {tasks.map(task => (
@@ -523,17 +630,27 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                 </span>
               </label>
             )}
-            <label className="col-completion">
-              <input
-                type="checkbox"
-                checked={task.completed}
-                onChange={e => onUpdate(task.id, { completed: e.target.checked })}
-                title={type === 'lecture' ? "Mark Lecture Completed" : "Mark Status Completed"}
-              />
-              <span className="completion-label">
-                {task.completed ? (type === 'lecture' ? 'Done' : 'Done') : (type === 'lecture' ? 'Pending' : 'Pending')}
-              </span>
-            </label>
+            <div className="col-completion">
+              <div
+                className={`checkbox-wrapper ${task.completed ? 'checked' : ''}`}
+                onClick={() => onUpdate(task.id, { completed: !task.completed })}
+                title="Mark Your Status"
+              >
+                {task.completed && <Check size={14} color="#10b981" />}
+              </div>
+            </div>
+            {type !== 'lecture' && (
+              <div className="col-completion">
+                <div
+                  className={`checkbox-wrapper ${task.dhruvCompleted ? 'checked' : ''}`}
+                  onClick={() => onUpdate(task.id, { dhruvCompleted: !task.dhruvCompleted })}
+                  style={{ borderColor: '#fcd34d' }}
+                  title="Mark Dhruv's Status"
+                >
+                  {task.dhruvCompleted && <Check size={14} color="#f59e0b" />}
+                </div>
+              </div>
+            )}
             <div className="col-actions">
               <div className="task-actions">
                 <button
@@ -581,11 +698,12 @@ function getSubjectWeights(subjectName) {
     weights = {
       attendance: 0.05,
       assignment: 0.10,
-      project: 0.25,
+      project: 0.15,
       midSem: 0.20,
       endSem: 0.40,
-      contest: 0
+      contest: 0.10
     };
+    counts.contest = 2; // Default to 2 contests for GenAI
   } else if (isDM || isSD) {
     weights = {
       attendance: 0.05,
@@ -643,8 +761,13 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
   // Written fields
   const [hasWritten, setHasWritten] = useState(false);
   const [writtenCorrect, setWrittenCorrect] = useState('');
+  const [dhruvWrittenCorrect, setDhruvWrittenCorrect] = useState('');
   const [writtenTotal, setWrittenTotal] = useState('');
   const [writtenWeight, setWrittenWeight] = useState('30');
+
+  // Dhruv fields
+  const [dhruvQuizCorrect, setDhruvQuizCorrect] = useState('');
+  const [dhruvCodingCorrect, setDhruvCodingCorrect] = useState('');
 
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -720,7 +843,7 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
     localStorage.setItem('contestDrafts', JSON.stringify(drafts));
   }, [contestName, hasQuiz, quizCorrect, quizTotal, quizWeight, hasCoding, codingCorrect, codingTotal, codingWeight, hasWritten, writtenCorrect, writtenTotal, writtenWeight, activeSubject, isLoaded]);
 
-  const calculateMarks = (components) => {
+  const calculateMarks = (components, personPrefix = '') => {
     let totalScore = 0;
     let totalWeight = 0;
 
@@ -743,8 +866,8 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
     const actualMarks = ratio * marksPerContest;
 
     return {
-      marks: Math.round(actualMarks * 10) / 10,
-      maxMarks: Math.round(marksPerContest * 10) / 10
+      marks: Number(actualMarks.toFixed(2)),
+      maxMarks: Number(marksPerContest.toFixed(2))
     };
   };
 
@@ -764,13 +887,20 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
     if (hasWritten && !writtenTotal) return;
 
     const count = tasks.length + 1;
-    const components = [
+    const personComponents = [
       { correct: quizCorrect, total: quizTotal, weight: quizWeight, enabled: hasQuiz },
       { correct: codingCorrect, total: codingTotal, weight: codingWeight, enabled: hasCoding },
       { correct: writtenCorrect, total: writtenTotal, weight: writtenWeight, enabled: hasWritten }
     ];
 
-    const { marks, maxMarks } = calculateMarks(components);
+    const dhruvComponents = [
+      { correct: dhruvQuizCorrect, total: quizTotal, weight: quizWeight, enabled: hasQuiz },
+      { correct: dhruvCodingCorrect, total: codingTotal, weight: codingWeight, enabled: hasCoding },
+      { correct: dhruvWrittenCorrect, total: writtenTotal, weight: writtenWeight, enabled: hasWritten }
+    ];
+
+    const { marks, maxMarks } = calculateMarks(personComponents);
+    const { marks: dhruvMarks } = calculateMarks(dhruvComponents);
 
     const data = {
       name: contestName,
@@ -779,23 +909,27 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
       hasCoding,
       hasWritten,
       marks,
+      dhruvMarks,
       maxMarks
     };
 
     if (hasQuiz) {
       data.quizCorrect = parseInt(quizCorrect) || 0;
+      data.dhruvQuizCorrect = parseInt(dhruvQuizCorrect) || 0;
       data.quizTotal = parseInt(quizTotal);
       data.quizWeight = parseFloat(quizWeight) || 0;
     }
 
     if (hasCoding) {
       data.codingCorrect = parseInt(codingCorrect) || 0;
+      data.dhruvCodingCorrect = parseInt(dhruvCodingCorrect) || 0;
       data.codingTotal = parseInt(codingTotal);
       data.codingWeight = parseFloat(codingWeight) || 0;
     }
 
     if (hasWritten) {
       data.writtenCorrect = parseInt(writtenCorrect) || 0;
+      data.dhruvWrittenCorrect = parseInt(dhruvWrittenCorrect) || 0;
       data.writtenTotal = parseInt(writtenTotal);
       data.writtenWeight = parseFloat(writtenWeight) || 0;
     }
@@ -805,10 +939,13 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
     // Clear form
     setContestName('');
     setQuizCorrect('');
+    setDhruvQuizCorrect('');
     setQuizTotal('');
     setCodingCorrect('');
+    setDhruvCodingCorrect('');
     setCodingTotal('');
     setWrittenCorrect('');
+    setDhruvWrittenCorrect('');
     setWrittenTotal('');
   };
 
@@ -857,36 +994,52 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
               Quiz
             </label>
             {hasQuiz && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  type="number"
-                  placeholder="Correct"
-                  value={quizCorrect}
-                  onChange={e => setQuizCorrect(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="0"
-                />
-                <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                <input
-                  type="number"
-                  placeholder="Total"
-                  value={quizTotal}
-                  onChange={e => setQuizTotal(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="1"
-                />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '0.65em', color: '#8b5cf6', fontWeight: 800 }}>U</span>
+                    <input
+                      type="number"
+                      placeholder="U"
+                      value={quizCorrect}
+                      onChange={e => setQuizCorrect(e.target.value)}
+                      style={{ width: '55px', padding: '6px' }}
+                      min="0"
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
+                    <input
+                      type="number"
+                      placeholder="D"
+                      value={dhruvQuizCorrect}
+                      onChange={e => setDhruvQuizCorrect(e.target.value)}
+                      style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
+                      min="0"
+                    />
+                  </div>
+                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
                   <input
                     type="number"
-                    placeholder="40"
-                    value={quizWeight}
-                    onChange={e => setQuizWeight(e.target.value)}
-                    style={{ width: '55px', padding: '6px' }}
-                    min="0"
-                    max="100"
-                    step="0.1"
+                    placeholder="Total"
+                    value={quizTotal}
+                    onChange={e => setQuizTotal(e.target.value)}
+                    style={{ width: '60px', padding: '6px' }}
+                    min="1"
                   />
-                  <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
+                    <input
+                      type="number"
+                      placeholder="40"
+                      value={quizWeight}
+                      onChange={e => setQuizWeight(e.target.value)}
+                      style={{ width: '45px', padding: '6px' }}
+                      min="0"
+                      max="100"
+                      step="0.1"
+                    />
+                    <span style={{ opacity: 0.7, fontSize: '0.7em' }}>%</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -903,36 +1056,52 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
               Coding
             </label>
             {hasCoding && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  type="number"
-                  placeholder="Correct"
-                  value={codingCorrect}
-                  onChange={e => setCodingCorrect(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="0"
-                />
-                <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                <input
-                  type="number"
-                  placeholder="Total"
-                  value={codingTotal}
-                  onChange={e => setCodingTotal(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="1"
-                />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '0.65em', color: '#60a5fa', fontWeight: 800 }}>U</span>
+                    <input
+                      type="number"
+                      placeholder="U"
+                      value={codingCorrect}
+                      onChange={e => setCodingCorrect(e.target.value)}
+                      style={{ width: '55px', padding: '6px' }}
+                      min="0"
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
+                    <input
+                      type="number"
+                      placeholder="D"
+                      value={dhruvCodingCorrect}
+                      onChange={e => setDhruvCodingCorrect(e.target.value)}
+                      style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
+                      min="0"
+                    />
+                  </div>
+                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
                   <input
                     type="number"
-                    placeholder="60"
-                    value={codingWeight}
-                    onChange={e => setCodingWeight(e.target.value)}
-                    style={{ width: '55px', padding: '6px' }}
-                    min="0"
-                    max="100"
-                    step="0.1"
+                    placeholder="Total"
+                    value={codingTotal}
+                    onChange={e => setCodingTotal(e.target.value)}
+                    style={{ width: '60px', padding: '6px' }}
+                    min="1"
                   />
-                  <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
+                    <input
+                      type="number"
+                      placeholder="60"
+                      value={codingWeight}
+                      onChange={e => setCodingWeight(e.target.value)}
+                      style={{ width: '45px', padding: '6px' }}
+                      min="0"
+                      max="100"
+                      step="0.1"
+                    />
+                    <span style={{ opacity: 0.7, fontSize: '0.7em' }}>%</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -949,36 +1118,41 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
               Written
             </label>
             {hasWritten && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  type="number"
-                  placeholder="Correct"
-                  value={writtenCorrect}
-                  onChange={e => setWrittenCorrect(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="0"
-                />
-                <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                <input
-                  type="number"
-                  placeholder="Total"
-                  value={writtenTotal}
-                  onChange={e => setWrittenTotal(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="1"
-                />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '0.65em', color: '#10b981', fontWeight: 800 }}>U</span>
+                    <input
+                      type="number"
+                      placeholder="U"
+                      value={writtenCorrect}
+                      onChange={e => setWrittenCorrect(e.target.value)}
+                      style={{ width: '55px', padding: '6px' }}
+                      min="0"
+                    />
+                  </div>
+                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
                   <input
                     type="number"
-                    placeholder="30"
-                    value={writtenWeight}
-                    onChange={e => setWrittenWeight(e.target.value)}
-                    style={{ width: '55px', padding: '6px' }}
-                    min="0"
-                    max="100"
-                    step="0.1"
+                    placeholder="Total"
+                    value={writtenTotal}
+                    onChange={e => setWrittenTotal(e.target.value)}
+                    style={{ width: '70px', padding: '6px' }}
+                    min="1"
                   />
-                  <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+                    <input
+                      type="number"
+                      placeholder="30"
+                      value={writtenWeight}
+                      onChange={e => setWrittenWeight(e.target.value)}
+                      style={{ width: '55px', padding: '6px' }}
+                      min="0"
+                      max="100"
+                      step="0.1"
+                    />
+                    <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -999,7 +1173,8 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
           <span className="col-quiz" style={{ flex: '0 0 100px', textAlign: 'center' }}>Quiz</span>
           <span className="col-coding" style={{ flex: '0 0 100px', textAlign: 'center' }}>Coding</span>
           <span className="col-written" style={{ flex: '0 0 100px', textAlign: 'center' }}>Written</span>
-          <span className="col-marks" style={{ flex: '0 0 100px', textAlign: 'center', fontWeight: 700 }}>Marks</span>
+          <span className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700 }}>You</span>
+          <span className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700, color: '#f59e0b' }}>Dhruv</span>
           <span className="col-actions">Actions</span>
         </div>
         {tasks.map(task => (
@@ -1010,32 +1185,53 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
             <div className="col-name">
               <span className={`task-name ${task.important ? 'important' : ''}`}>{task.name}</span>
             </div>
-            <div className="col-quiz" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.9em' }}>
+            <div className="col-quiz" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.8em' }}>
               {task.hasQuiz ? (
-                <span style={{ opacity: 0.8 }}>
-                  {task.quizCorrect}/{task.quizTotal}
-                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({task.quizWeight}%)</span>
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ opacity: 0.8 }} title={`Weight: ${task.quizWeight}%`}>
+                    U: {task.quizCorrect}/{task.quizTotal}
+                    <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.quizCorrect / task.quizTotal) * 100)}%)</span>
+                  </span>
+                  <span style={{ opacity: 0.8, color: '#f59e0b' }}>
+                    D: {task.dhruvQuizCorrect ?? '-'}/{task.quizTotal}
+                    {task.dhruvQuizCorrect !== undefined && <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.dhruvQuizCorrect / task.quizTotal) * 100)}%)</span>}
+                  </span>
+                </div>
               ) : <span style={{ opacity: 0.4 }}>-</span>}
             </div>
-            <div className="col-coding" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.9em' }}>
+            <div className="col-coding" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.8em' }}>
               {task.hasCoding ? (
-                <span style={{ opacity: 0.8 }}>
-                  {task.codingCorrect}/{task.codingTotal}
-                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({task.codingWeight}%)</span>
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ opacity: 0.8 }} title={`Weight: ${task.codingWeight}%`}>
+                    U: {task.codingCorrect}/{task.codingTotal}
+                    <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.codingCorrect / task.codingTotal) * 100)}%)</span>
+                  </span>
+                  <span style={{ opacity: 0.8, color: '#f59e0b' }}>
+                    D: {task.dhruvCodingCorrect ?? '-'}/{task.codingTotal}
+                    {task.dhruvCodingCorrect !== undefined && <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.dhruvCodingCorrect / task.codingTotal) * 100)}%)</span>}
+                  </span>
+                </div>
               ) : <span style={{ opacity: 0.4 }}>-</span>}
             </div>
-            <div className="col-written" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.9em' }}>
+            <div className="col-written" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.8em' }}>
               {task.hasWritten ? (
-                <span style={{ opacity: 0.8 }}>
-                  {task.writtenCorrect}/{task.writtenTotal}
-                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({task.writtenWeight}%)</span>
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ opacity: 0.8 }} title={`Weight: ${task.writtenWeight}%`}>
+                    U: {task.writtenCorrect}/{task.writtenTotal}
+                    <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.writtenCorrect / task.writtenTotal) * 100)}%)</span>
+                  </span>
+                  <span style={{ opacity: 0.8, color: '#f59e0b' }}>
+                    D: {task.dhruvWrittenCorrect ?? '-'}/{task.writtenTotal}
+                    {task.dhruvWrittenCorrect !== undefined && <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.dhruvWrittenCorrect / task.writtenTotal) * 100)}%)</span>}
+                  </span>
+                </div>
               ) : <span style={{ opacity: 0.4 }}>-</span>}
             </div>
-            <div className="col-marks" style={{ flex: '0 0 100px', textAlign: 'center', fontWeight: 700, fontSize: '1em' }}>
+            <div className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700, fontSize: '0.9em' }}>
               <span style={{ color: '#10b981' }}>{task.marks}/{task.maxMarks}</span>
+            </div>
+            <div className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700, fontSize: '0.9em' }}>
+              <span style={{ color: '#f59e0b' }}>{task.dhruvMarks ?? 0}/{task.maxMarks}</span>
             </div>
             <div className="col-actions">
               <div className="task-actions">
@@ -1068,18 +1264,21 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
   // Quiz fields
   const [hasQuiz, setHasQuiz] = useState(true);
   const [quizCorrect, setQuizCorrect] = useState('');
+  const [dhruvQuizCorrect, setDhruvQuizCorrect] = useState('');
   const [quizTotal, setQuizTotal] = useState('');
   const [quizWeight, setQuizWeight] = useState('40');
 
   // Coding fields
   const [hasCoding, setHasCoding] = useState(true);
   const [codingCorrect, setCodingCorrect] = useState('');
+  const [dhruvCodingCorrect, setDhruvCodingCorrect] = useState('');
   const [codingTotal, setCodingTotal] = useState('');
   const [codingWeight, setCodingWeight] = useState('60');
 
   // Written fields
   const [hasWritten, setHasWritten] = useState(false);
   const [writtenCorrect, setWrittenCorrect] = useState('');
+  const [dhruvWrittenCorrect, setDhruvWrittenCorrect] = useState('');
   const [writtenTotal, setWrittenTotal] = useState('');
   const [writtenWeight, setWrittenWeight] = useState('30');
 
@@ -1178,8 +1377,8 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
     const actualMarks = ratio * marksPerExam;
 
     return {
-      marks: Math.round(actualMarks * 10) / 10,
-      maxMarks: Math.round(marksPerExam * 10) / 10
+      marks: Number(actualMarks.toFixed(2)),
+      maxMarks: Number(marksPerExam.toFixed(2))
     };
   };
 
@@ -1199,13 +1398,20 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
     if (hasWritten && !writtenTotal) return;
 
     const count = tasks.length + 1;
-    const components = [
+    const personComponents = [
       { correct: quizCorrect, total: quizTotal, weight: quizWeight, enabled: hasQuiz },
       { correct: codingCorrect, total: codingTotal, weight: codingWeight, enabled: hasCoding },
       { correct: writtenCorrect, total: writtenTotal, weight: writtenWeight, enabled: hasWritten }
     ];
 
-    const { marks, maxMarks } = calculateMarks(components);
+    const dhruvComponents = [
+      { correct: dhruvQuizCorrect, total: quizTotal, weight: quizWeight, enabled: hasQuiz },
+      { correct: dhruvCodingCorrect, total: codingTotal, weight: codingWeight, enabled: hasCoding },
+      { correct: dhruvWrittenCorrect, total: writtenTotal, weight: writtenWeight, enabled: hasWritten }
+    ];
+
+    const { marks, maxMarks } = calculateMarks(personComponents);
+    const { marks: dhruvMarks } = calculateMarks(dhruvComponents);
 
     const data = {
       name: examName,
@@ -1214,23 +1420,27 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
       hasCoding,
       hasWritten,
       marks,
+      dhruvMarks,
       maxMarks
     };
 
     if (hasQuiz) {
       data.quizCorrect = parseInt(quizCorrect) || 0;
+      data.dhruvQuizCorrect = parseInt(dhruvQuizCorrect) || 0;
       data.quizTotal = parseInt(quizTotal);
       data.quizWeight = parseFloat(quizWeight) || 0;
     }
 
     if (hasCoding) {
       data.codingCorrect = parseInt(codingCorrect) || 0;
+      data.dhruvCodingCorrect = parseInt(dhruvCodingCorrect) || 0;
       data.codingTotal = parseInt(codingTotal);
       data.codingWeight = parseFloat(codingWeight) || 0;
     }
 
     if (hasWritten) {
       data.writtenCorrect = parseInt(writtenCorrect) || 0;
+      data.dhruvWrittenCorrect = parseInt(dhruvWrittenCorrect) || 0;
       data.writtenTotal = parseInt(writtenTotal);
       data.writtenWeight = parseFloat(writtenWeight) || 0;
     }
@@ -1240,10 +1450,13 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
     // Clear form
     setExamName('');
     setQuizCorrect('');
+    setDhruvQuizCorrect('');
     setQuizTotal('');
     setCodingCorrect('');
+    setDhruvCodingCorrect('');
     setCodingTotal('');
     setWrittenCorrect('');
+    setDhruvWrittenCorrect('');
     setWrittenTotal('');
   };
 
@@ -1393,13 +1606,24 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
                   style={{ width: '70px', padding: '6px' }}
                   min="0"
                 />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
+                  <input
+                    type="number"
+                    placeholder="D"
+                    value={dhruvWrittenCorrect}
+                    onChange={e => setDhruvWrittenCorrect(e.target.value)}
+                    style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
+                    min="0"
+                  />
+                </div>
                 <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
                 <input
                   type="number"
                   placeholder="Total"
                   value={writtenTotal}
                   onChange={e => setWrittenTotal(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
+                  style={{ width: '60px', padding: '6px' }}
                   min="1"
                 />
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
@@ -1447,30 +1671,33 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
             </div>
             <div className="col-quiz" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.9em' }}>
               {task.hasQuiz ? (
-                <span style={{ opacity: 0.8 }}>
+                <span style={{ opacity: 0.8 }} title={`Weight: ${task.quizWeight}%`}>
                   {task.quizCorrect}/{task.quizTotal}
-                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({task.quizWeight}%)</span>
+                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({Math.round((task.quizCorrect / task.quizTotal) * 100)}%)</span>
                 </span>
               ) : <span style={{ opacity: 0.4 }}>-</span>}
             </div>
             <div className="col-coding" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.9em' }}>
               {task.hasCoding ? (
-                <span style={{ opacity: 0.8 }}>
+                <span style={{ opacity: 0.8 }} title={`Weight: ${task.codingWeight}%`}>
                   {task.codingCorrect}/{task.codingTotal}
-                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({task.codingWeight}%)</span>
+                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({Math.round((task.codingCorrect / task.codingTotal) * 100)}%)</span>
                 </span>
               ) : <span style={{ opacity: 0.4 }}>-</span>}
             </div>
             <div className="col-written" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.9em' }}>
               {task.hasWritten ? (
-                <span style={{ opacity: 0.8 }}>
+                <span style={{ opacity: 0.8 }} title={`Weight: ${task.writtenWeight}%`}>
                   {task.writtenCorrect}/{task.writtenTotal}
-                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({task.writtenWeight}%)</span>
+                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({Math.round((task.writtenCorrect / task.writtenTotal) * 100)}%)</span>
                 </span>
               ) : <span style={{ opacity: 0.4 }}>-</span>}
             </div>
-            <div className="col-marks" style={{ flex: '0 0 100px', textAlign: 'center', fontWeight: 700, fontSize: '1em' }}>
+            <div className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700, fontSize: '0.9em' }}>
               <span style={{ color: '#10b981' }}>{task.marks}/{task.maxMarks}</span>
+            </div>
+            <div className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700, fontSize: '0.9em' }}>
+              <span style={{ color: '#f59e0b' }}>{task.dhruvMarks ?? 0}/{task.maxMarks}</span>
             </div>
             <div className="col-actions">
               <div className="task-actions">
@@ -1508,44 +1735,54 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
   // Contest/Exam fields
   const [hasQuiz, setHasQuiz] = useState(task.hasQuiz !== undefined ? task.hasQuiz : true);
   const [quizCorrect, setQuizCorrect] = useState(task.quizCorrect || 0);
+  const [dhruvQuizCorrect, setDhruvQuizCorrect] = useState(task.dhruvQuizCorrect || 0);
   const [quizTotal, setQuizTotal] = useState(task.quizTotal || 0);
   const [quizWeight, setQuizWeight] = useState(task.quizWeight || 40);
 
   const [hasCoding, setHasCoding] = useState(task.hasCoding !== undefined ? task.hasCoding : true);
   const [codingCorrect, setCodingCorrect] = useState(task.codingCorrect || 0);
+  const [dhruvCodingCorrect, setDhruvCodingCorrect] = useState(task.dhruvCodingCorrect || 0);
   const [codingTotal, setCodingTotal] = useState(task.codingTotal || 0);
   const [codingWeight, setCodingWeight] = useState(task.codingWeight || 60);
 
   const [hasWritten, setHasWritten] = useState(task.hasWritten || false);
   const [writtenCorrect, setWrittenCorrect] = useState(task.writtenCorrect || 0);
+  const [dhruvWrittenCorrect, setDhruvWrittenCorrect] = useState(task.dhruvWrittenCorrect || 0);
   const [writtenTotal, setWrittenTotal] = useState(task.writtenTotal || 0);
   const [writtenWeight, setWrittenWeight] = useState(task.writtenWeight || 30);
 
   const calculateContestMarks = () => {
     let totalScore = 0;
+    let dhruvTotalScore = 0;
     let totalWeight = 0;
 
     if (hasQuiz && quizTotal > 0) {
       const qC = parseInt(quizCorrect) || 0;
+      const dqC = parseInt(dhruvQuizCorrect) || 0;
       const qT = parseInt(quizTotal) || 1;
       const qW = parseFloat(quizWeight) || 0;
       totalScore += (qC / qT) * qW;
+      dhruvTotalScore += (dqC / qT) * qW;
       totalWeight += qW;
     }
 
     if (hasCoding && codingTotal > 0) {
       const cC = parseInt(codingCorrect) || 0;
+      const dcC = parseInt(dhruvCodingCorrect) || 0;
       const cT = parseInt(codingTotal) || 1;
       const cW = parseFloat(codingWeight) || 0;
       totalScore += (cC / cT) * cW;
+      dhruvTotalScore += (dcC / cT) * cW;
       totalWeight += cW;
     }
 
     if (hasWritten && writtenTotal > 0) {
       const wC = parseInt(writtenCorrect) || 0;
+      const dwC = parseInt(dhruvWrittenCorrect) || 0;
       const wT = parseInt(writtenTotal) || 1;
       const wW = parseFloat(writtenWeight) || 0;
       totalScore += (wC / wT) * wW;
+      dhruvTotalScore += (dwC / wT) * wW;
       totalWeight += wW;
     }
 
@@ -1563,11 +1800,14 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
 
     // Calculate actual marks based on performance ratio and allocated marks
     const ratio = totalWeight > 0 ? (totalScore / totalWeight) : 0;
+    const dhruvRatio = totalWeight > 0 ? (dhruvTotalScore / totalWeight) : 0;
     const actualMarks = ratio * maxMarksForEntry;
+    const actualDhruvMarks = dhruvRatio * maxMarksForEntry;
 
     return {
-      marks: Math.round(actualMarks * 10) / 10,
-      maxMarks: Math.round(maxMarksForEntry * 10) / 10
+      marks: Number(actualMarks.toFixed(2)),
+      dhruvMarks: Number(actualDhruvMarks.toFixed(2)),
+      maxMarks: Number(maxMarksForEntry.toFixed(2))
     };
   };
 
@@ -1582,28 +1822,32 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
     };
 
     if (task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') {
-      const { marks, maxMarks } = calculateContestMarks();
+      const result = calculateContestMarks();
 
       updates.hasQuiz = hasQuiz;
       updates.hasCoding = hasCoding;
       updates.hasWritten = hasWritten;
-      updates.marks = marks;
-      updates.maxMarks = maxMarks;
+      updates.marks = result.marks;
+      updates.dhruvMarks = result.dhruvMarks;
+      updates.maxMarks = result.maxMarks;
 
       if (hasQuiz) {
         updates.quizCorrect = parseInt(quizCorrect) || 0;
+        updates.dhruvQuizCorrect = parseInt(dhruvQuizCorrect) || 0;
         updates.quizTotal = parseInt(quizTotal) || 1;
         updates.quizWeight = parseFloat(quizWeight) || 0;
       }
 
       if (hasCoding) {
         updates.codingCorrect = parseInt(codingCorrect) || 0;
+        updates.dhruvCodingCorrect = parseInt(dhruvCodingCorrect) || 0;
         updates.codingTotal = parseInt(codingTotal) || 1;
         updates.codingWeight = parseFloat(codingWeight) || 0;
       }
 
       if (hasWritten) {
         updates.writtenCorrect = parseInt(writtenCorrect) || 0;
+        updates.dhruvWrittenCorrect = parseInt(dhruvWrittenCorrect) || 0;
         updates.writtenTotal = parseInt(writtenTotal) || 1;
         updates.writtenWeight = parseFloat(writtenWeight) || 0;
       }
@@ -1662,23 +1906,40 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
                   <>
                     <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Questions (Correct / Total)</label>
                     <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                      <input
-                        type="number"
-                        value={quizCorrect}
-                        onChange={e => setQuizCorrect(e.target.value)}
-                        placeholder="Correct"
-                        min="0"
-                        style={{ flex: 1 }}
-                      />
-                      <span style={{ alignSelf: 'center' }}>/</span>
-                      <input
-                        type="number"
-                        value={quizTotal}
-                        onChange={e => setQuizTotal(e.target.value)}
-                        placeholder="Total"
-                        min="1"
-                        style={{ flex: 1 }}
-                      />
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '0.65em', color: '#8b5cf6', fontWeight: 800 }}>YOU</span>
+                        <input
+                          type="number"
+                          value={quizCorrect}
+                          onChange={e => setQuizCorrect(e.target.value)}
+                          placeholder="U"
+                          min="0"
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                        <input
+                          type="number"
+                          value={dhruvQuizCorrect}
+                          onChange={e => setDhruvQuizCorrect(e.target.value)}
+                          placeholder="D"
+                          min="0"
+                          style={{ width: '100%', borderColor: '#fcd34d' }}
+                        />
+                      </div>
+                      <span style={{ alignSelf: 'flex-end', paddingBottom: '10px' }}>/</span>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '0.65em', opacity: 0.5, fontWeight: 800 }}>TOTAL</span>
+                        <input
+                          type="number"
+                          value={quizTotal}
+                          onChange={e => setQuizTotal(e.target.value)}
+                          placeholder="T"
+                          min="1"
+                          style={{ width: '100%' }}
+                        />
+                      </div>
                     </div>
                     <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Weight (%)</label>
                     <input
@@ -1708,23 +1969,40 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
                   <>
                     <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Questions (Correct / Total)</label>
                     <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                      <input
-                        type="number"
-                        value={codingCorrect}
-                        onChange={e => setCodingCorrect(e.target.value)}
-                        placeholder="Correct"
-                        min="0"
-                        style={{ flex: 1 }}
-                      />
-                      <span style={{ alignSelf: 'center' }}>/</span>
-                      <input
-                        type="number"
-                        value={codingTotal}
-                        onChange={e => setCodingTotal(e.target.value)}
-                        placeholder="Total"
-                        min="1"
-                        style={{ flex: 1 }}
-                      />
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '0.65em', color: '#10b981', fontWeight: 800 }}>YOU</span>
+                        <input
+                          type="number"
+                          value={codingCorrect}
+                          onChange={e => setCodingCorrect(e.target.value)}
+                          placeholder="U"
+                          min="0"
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                        <input
+                          type="number"
+                          value={dhruvCodingCorrect}
+                          onChange={e => setDhruvCodingCorrect(e.target.value)}
+                          placeholder="D"
+                          min="0"
+                          style={{ width: '100%', borderColor: '#fcd34d' }}
+                        />
+                      </div>
+                      <span style={{ alignSelf: 'flex-end', paddingBottom: '10px' }}>/</span>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '0.65em', opacity: 0.5, fontWeight: 800 }}>TOTAL</span>
+                        <input
+                          type="number"
+                          value={codingTotal}
+                          onChange={e => setCodingTotal(e.target.value)}
+                          placeholder="T"
+                          min="1"
+                          style={{ width: '100%' }}
+                        />
+                      </div>
                     </div>
                     <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Weight (%)</label>
                     <input
@@ -1754,23 +2032,40 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
                   <>
                     <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Questions (Correct / Total)</label>
                     <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                      <input
-                        type="number"
-                        value={writtenCorrect}
-                        onChange={e => setWrittenCorrect(e.target.value)}
-                        placeholder="Correct"
-                        min="0"
-                        style={{ flex: 1 }}
-                      />
-                      <span style={{ alignSelf: 'center' }}>/</span>
-                      <input
-                        type="number"
-                        value={writtenTotal}
-                        onChange={e => setWrittenTotal(e.target.value)}
-                        placeholder="Total"
-                        min="1"
-                        style={{ flex: 1 }}
-                      />
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '0.65em', color: '#ef4444', fontWeight: 800 }}>YOU</span>
+                        <input
+                          type="number"
+                          value={writtenCorrect}
+                          onChange={e => setWrittenCorrect(e.target.value)}
+                          placeholder="U"
+                          min="0"
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                        <input
+                          type="number"
+                          value={dhruvWrittenCorrect}
+                          onChange={e => setDhruvWrittenCorrect(e.target.value)}
+                          placeholder="D"
+                          min="0"
+                          style={{ width: '100%', borderColor: '#fcd34d' }}
+                        />
+                      </div>
+                      <span style={{ alignSelf: 'flex-end', paddingBottom: '10px' }}>/</span>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '0.65em', opacity: 0.5, fontWeight: 800 }}>TOTAL</span>
+                        <input
+                          type="number"
+                          value={writtenTotal}
+                          onChange={e => setWrittenTotal(e.target.value)}
+                          placeholder="T"
+                          min="1"
+                          style={{ width: '100%' }}
+                        />
+                      </div>
                     </div>
                     <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Weight (%)</label>
                     <input
@@ -1796,9 +2091,14 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
               border: '1px solid rgba(16, 185, 129, 0.3)',
               marginTop: '10px'
             }}>
-              <strong style={{ color: '#10b981' }}>
-                Calculated Marks: {calculateContestMarks().marks}/{calculateContestMarks().maxMarks}
-              </strong>
+              <div style={{ display: 'flex', gap: '15px' }}>
+                <strong style={{ color: '#10b981' }}>
+                  Your Marks: {calculateContestMarks().marks}/{calculateContestMarks().maxMarks}
+                </strong>
+                <strong style={{ color: '#f59e0b' }}>
+                  Dhruv: {calculateContestMarks().dhruvMarks}/{calculateContestMarks().maxMarks}
+                </strong>
+              </div>
               <div style={{ fontSize: '0.85em', opacity: 0.8, marginTop: '5px' }}>
                 {hasQuiz && `Quiz: ${quizWeight}%`}
                 {hasQuiz && hasCoding && ' | '}
@@ -1824,22 +2124,45 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
 
 
 function SummaryView({ tasks, subjects }) {
-  const getSubjectScore = (data, name) => {
+  const getSubjectScore = (data, name, isDhruv = false) => {
     const { weights } = getSubjectWeights(name);
 
-    // Attendance component (weighted 60/40 for Class/Lab)
-    const currentAtt = ((data.class.attendancePercent || 0) * 0.6) + ((data.lab.attendancePercent || 0) * 0.4);
+    // Attendance component
+    const currentAtt = isDhruv
+      ? (((data.class.dhruvAttendancePercent || 0) * 0.6) + ((data.lab.dhruvAttendancePercent || 0) * 0.4))
+      : (((data.class.attendancePercent || 0) * 0.6) + ((data.lab.attendancePercent || 0) * 0.4));
 
-    // Calculate component scores
-    const attScore = (currentAtt / 100) * weights.attendance * 100;
-    const assScore = ((data.class.assignmentPercent || 0) * 0.5 + (data.lab.assignmentPercent || 0) * 0.5) / 100 * (weights.assignment * 100 || 0);
-    const projScore = ((data.class.projectPercent || 0) * 0.5 + (data.lab.projectPercent || 0) * 0.5) / 100 * (weights.project * 100 || 0);
-    const contScore = ((data.class.contestPercent || 0) * 0.5 + (data.lab.contestPercent || 0) * 0.5) / 100 * (weights.contest * 100 || 0);
-    const midScore = ((data.class.midPercent || 0) * 0.5 + (data.lab.midPercent || 0) * 0.5) / 100 * (weights.midSem * 100 || 0);
-    const endScore = ((data.class.endPercent || 0) * 0.5 + (data.lab.endPercent || 0) * 0.5) / 100 * (weights.endSem * 100 || 0);
+    const attScore = (currentAtt / 100) * (weights.attendance || 0) * 100;
+
+    const getCompScore = (key) => {
+      const classData = data.class[key] || { percent: 0, totalMarks: 0, dhruvTotalMarks: 0 };
+      const labData = data.lab[key] || { percent: 0, totalMarks: 0, dhruvTotalMarks: 0 };
+
+      if (['contest', 'midSem', 'endSem'].includes(key)) {
+        return isDhruv
+          ? ((classData.dhruvTotalMarks || 0) + (labData.dhruvTotalMarks || 0))
+          : ((classData.totalMarks || 0) + (labData.totalMarks || 0));
+      }
+
+      const avgPercent = ((classData.percent || 0) * 0.5 + (labData.percent || 0) * 0.5);
+      // For now assignments are shared completion, but we could add dhruvPercent if needed
+      return (avgPercent / 100) * (weights[key] || 0) * 100;
+    };
+
+    const breakdown = {
+      attendance: attScore,
+      assignment: getCompScore('assignment'),
+      project: getCompScore('project'),
+      contest: getCompScore('contest'),
+      midSem: getCompScore('midSem'),
+      endSem: getCompScore('endSem')
+    };
+
+    const finalScore = Object.values(breakdown).reduce((acc, curr) => acc + curr, 0);
 
     return {
-      finalScore: Math.round(attScore + assScore + projScore + contScore + midScore + endScore),
+      finalScore: Number(finalScore.toFixed(2)),
+      breakdown,
       weights
     };
   };
@@ -1851,27 +2174,39 @@ function SummaryView({ tasks, subjects }) {
       if (!groups[baseName]) groups[baseName] = { class: {}, lab: {} };
 
       const subjectTasks = tasks.filter(t => t.subjectName === s);
-      const getCompletion = (type) => {
+      const getCategoryStats = (type) => {
         const filtered = subjectTasks.filter(t => t.type === type);
         const total = filtered.length;
         const done = filtered.filter(t => t.completed).length;
-        return { total, done, percent: total > 0 ? (done / total) * 100 : 0 };
+        const totalMarks = filtered.reduce((acc, t) => acc + (t.marks || 0), 0);
+        const dhruvTotalMarks = filtered.reduce((acc, t) => acc + (t.dhruvMarks || 0), 0);
+        const maxMarks = filtered.reduce((acc, t) => acc + (t.maxMarks || 0), 0);
+
+        let percent = 0;
+        if (maxMarks > 0) percent = (totalMarks / maxMarks) * 100;
+        else if (total > 0) percent = (done / total) * 100;
+
+        return { total, done, percent, totalMarks, dhruvTotalMarks, maxMarks };
       };
 
       const lects = subjectTasks.filter(t => t.type === 'lecture');
       const attCount = lects.filter(t => t.present !== false).length;
+      const friendMeta = tasks.find(t => t.type === 'friend_meta' && t.subjectName === s);
+      const dhruvAttCount = friendMeta?.attendanceCount ?? attCount;
 
       const stats = {
         total: lects.length,
         attendanceCount: attCount,
         attendancePercent: lects.length > 0 ? (attCount / lects.length) * 100 : 0,
-        completionPercent: getCompletion('lecture').percent,
-        completionCount: getCompletion('lecture').done,
-        assignmentPercent: getCompletion('assignment').percent,
-        projectPercent: getCompletion('project').percent,
-        contestPercent: getCompletion('contest').percent,
-        midPercent: subjectTasks.some(t => t.type === 'midSem' && t.completed) ? 100 : 0,
-        endPercent: subjectTasks.some(t => t.type === 'endSem' && t.completed) ? 100 : 0
+        dhruvAttendanceCount: dhruvAttCount,
+        dhruvAttendancePercent: lects.length > 0 ? (dhruvAttCount / lects.length) * 100 : 0,
+        completionPercent: getCategoryStats('lecture').percent,
+        completionCount: getCategoryStats('lecture').done,
+        assignment: getCategoryStats('assignment'),
+        project: getCategoryStats('project'),
+        contest: getCategoryStats('contest'),
+        midSem: getCategoryStats('midSem'),
+        endSem: getCategoryStats('endSem')
       };
 
       if (s.includes('Class')) groups[baseName].class = stats;
@@ -1890,6 +2225,7 @@ function SummaryView({ tasks, subjects }) {
 
     const items = Object.entries(subjectGroups).map(([name, data]) => {
       const attWeighted = ((data.class.attendancePercent || 0) * 0.6) + ((data.lab.attendancePercent || 0) * 0.4);
+      const dhruvAttWeighted = ((data.class.dhruvAttendancePercent || 0) * 0.6) + ((data.lab.dhruvAttendancePercent || 0) * 0.4);
       const compWeighted = ((data.class.completionPercent || 0) * 0.5) + ((data.lab.completionPercent || 0) * 0.5);
 
       totalAttendanceWeighted += attWeighted;
@@ -1905,21 +2241,27 @@ function SummaryView({ tasks, subjects }) {
       const studyGap = classGap + labGap;
 
       const scoreData = getSubjectScore(data, name);
+      const dhruvScoreData = getSubjectScore(data, name, true);
 
       return {
         name,
         attWeighted,
+        dhruvAttWeighted,
         compWeighted,
         ...data,
         studyGap,
         classGap,
         labGap,
         score: scoreData.finalScore,
+        dhruvScore: dhruvScoreData.finalScore,
+        breakdown: scoreData.breakdown,
+        dhruvBreakdown: dhruvScoreData.breakdown,
         weights: scoreData.weights
       };
     });
 
     const totalProjectedScore = items.reduce((acc, curr) => acc + curr.score, 0);
+    const totalDhruvScore = items.reduce((acc, curr) => acc + curr.dhruvScore, 0);
     const maxPossibleScore = count * 100;
 
     return {
@@ -1930,9 +2272,50 @@ function SummaryView({ tasks, subjects }) {
       grandTotalAttended,
       grandTotalCompleted,
       totalProjectedScore,
+      totalDhruvScore,
       maxPossibleScore
     };
   }, [subjectGroups]);
+
+  const format2 = (val) => Number(val).toFixed(2);
+
+  const chartData = useMemo(() => {
+    return summaryData.items.map(item => ({
+      name: item.name,
+      You: Number(item.score.toFixed(2)),
+      Dhruv: Number(item.dhruvScore.toFixed(2)),
+      diff: Number((item.score - item.dhruvScore).toFixed(2))
+    }));
+  }, [summaryData.items]);
+
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="custom-tooltip glass" style={{
+          padding: '12px',
+          border: '1px solid #e2e8f0',
+          background: 'rgba(255,255,255,0.95)',
+          backdropFilter: 'blur(8px)',
+          borderRadius: '12px',
+          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+        }}>
+          <p style={{ fontWeight: 800, marginBottom: '8px', color: '#1e293b' }}>{label}</p>
+          {payload.map((p, index) => (
+            <p key={index} style={{ color: p.color, fontSize: '0.85rem', fontWeight: 600, display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+              <span>{p.name}:</span>
+              <span>{p.value}</span>
+            </p>
+          ))}
+          {payload.length > 1 && (
+            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0', fontSize: '0.8rem', fontWeight: 700, color: '#475569' }}>
+              Difference: {format2(Math.abs(payload[0].value - payload[1].value))}
+            </div>
+          )}
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <div className="summary-container unified-summary">
@@ -1941,7 +2324,7 @@ function SummaryView({ tasks, subjects }) {
           <div className="overall-info">
             <PieChart size={40} className="text-primary" />
             <div>
-              <h2>{Math.round(summaryData.overallAttendance)}%</h2>
+              <h2>{format2(summaryData.overallAttendance)}%</h2>
               <p>Overall Attendance</p>
             </div>
           </div>
@@ -1955,7 +2338,7 @@ function SummaryView({ tasks, subjects }) {
           <div className="overall-info">
             <CheckCircle2 size={40} className="text-success" />
             <div>
-              <h2>{Math.round(summaryData.overallCompletion)}%</h2>
+              <h2>{format2(summaryData.overallCompletion)}%</h2>
               <p>Overall Completion</p>
             </div>
           </div>
@@ -1966,16 +2349,145 @@ function SummaryView({ tasks, subjects }) {
         </div>
 
         <div className="overall-card score-card glass shadow-lg">
-          <div className="overall-info">
-            <Award size={40} className="text-warning" />
-            <div>
-              <h2>{summaryData.totalProjectedScore}/{summaryData.maxPossibleScore}</h2>
-              <p>Total Marks</p>
+          <div className="overall-info" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Award size={40} className="text-warning" />
+              <div style={{ display: 'flex', gap: '24px' }}>
+                <div>
+                  <h2 style={{ fontSize: '2.2rem' }}>{format2(summaryData.totalProjectedScore)}</h2>
+                  <p>Your Marks</p>
+                </div>
+                <div style={{ borderLeft: '2px solid rgba(245, 158, 11, 0.2)', paddingLeft: '24px' }}>
+                  <h2 style={{ fontSize: '2.2rem', color: '#f59e0b' }}>{format2(summaryData.totalDhruvScore)}</h2>
+                  <p>Dhruv's Marks</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="leader-pill" style={{
+              background: summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#ecfdf5' : '#fffbeb',
+              color: summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#059669' : '#d97706',
+              padding: '8px 16px',
+              borderRadius: '100px',
+              fontSize: '0.85rem',
+              fontWeight: 800,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              alignSelf: 'stretch',
+              justifyContent: 'center',
+              border: `1px solid ${summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#d1fae5' : '#fef3c7'}`
+            }}>
+              <Trophy size={16} />
+              <span>
+                {Math.abs(summaryData.totalProjectedScore - summaryData.totalDhruvScore) < 0.01
+                  ? "It's a Tie!"
+                  : summaryData.totalProjectedScore > summaryData.totalDhruvScore
+                    ? `You are ahead by ${format2(summaryData.totalProjectedScore - summaryData.totalDhruvScore)}`
+                    : `Dhruv is ahead by ${format2(summaryData.totalDhruvScore - summaryData.totalProjectedScore)}`
+                }
+              </span>
             </div>
           </div>
           <div className="overall-stats-pill">
-            <span className="stats-label">Avg Score</span>
-            <span className="stats-value">{summaryData.maxPossibleScore > 0 ? Math.round((summaryData.totalProjectedScore / summaryData.maxPossibleScore) * 100) : 0}%</span>
+            <span className="stats-label">Max Possible: {summaryData.maxPossibleScore}</span>
+            <div style={{ display: 'flex', gap: '12px', fontSize: '0.9rem', fontWeight: 700 }}>
+              <span className="stats-value" style={{ fontSize: '1rem' }}>{summaryData.maxPossibleScore > 0 ? format2((summaryData.totalProjectedScore / summaryData.maxPossibleScore) * 100) : 0}%</span>
+              <span style={{ opacity: 0.3 }}>|</span>
+              <span className="stats-value" style={{ fontSize: '1rem', color: '#f59e0b' }}>{summaryData.maxPossibleScore > 0 ? format2((summaryData.totalDhruvScore / summaryData.maxPossibleScore) * 100) : 0}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="analytics-insights-grid" style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))',
+        gap: '24px',
+        marginBottom: '48px',
+        marginTop: '24px'
+      }}>
+        <div className="overall-card glass shadow-md chart-container-card" style={{ padding: '24px', height: '420px', display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+            <BarChart3 size={20} style={{ color: '#6366f1' }} />
+            Subject-wise Marks Comparison
+          </h3>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ReBarChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <ReXAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                  dy={10}
+                />
+                <ReYAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                />
+                <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} />
+                <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '0.8rem', fontWeight: 700 }} />
+                <ReBar dataKey="You" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={22} />
+                <ReBar dataKey="Dhruv" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={22} />
+              </ReBarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="overall-card glass shadow-md chart-container-card" style={{ padding: '24px', height: '420px', display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+            <Trophy size={20} style={{ color: '#10b981' }} />
+            Mark Advantage (+/-)
+          </h3>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <ReXAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                  dy={10}
+                />
+                <ReYAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                />
+                <ReTooltip
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      const diff = payload[0].value;
+                      return (
+                        <div className="custom-tooltip glass" style={{
+                          padding: '12px',
+                          border: '1px solid #e2e8f0',
+                          background: 'rgba(255,255,255,0.95)',
+                          backdropFilter: 'blur(8px)',
+                          borderRadius: '12px'
+                        }}>
+                          <p style={{ fontWeight: 800, marginBottom: '4px' }}>{label}</p>
+                          <p style={{ color: diff >= 0 ? '#10b981' : '#ef4444', fontWeight: 700, fontSize: '0.9rem' }}>
+                            {diff >= 0 ? 'You Lead by: ' : 'Dhruv Leads by: '}
+                            {Math.abs(diff).toFixed(2)}
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <ReBar dataKey="diff" name="Advantage">
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.diff >= 0 ? '#10b981' : '#ef4444'} opacity={0.6} />
+                  ))}
+                </ReBar>
+              </ComposedChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
@@ -1989,15 +2501,30 @@ function SummaryView({ tasks, subjects }) {
                 <span className="lecture-count-pill">{item.class.total + item.lab.total} Total Lectures</span>
               </div>
               <div className="header-badges">
+                <div className={`leader-badge ${item.score >= item.dhruvScore ? 'me' : 'dhruv'}`} style={{
+                  padding: '4px 10px',
+                  borderRadius: '100px',
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  background: item.score >= item.dhruvScore ? '#f0fdf4' : '#fffbeb',
+                  color: item.score >= item.dhruvScore ? '#166534' : '#92400e',
+                  border: `1px solid ${item.score >= item.dhruvScore ? '#bbf7d0' : '#fde68a'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <Star size={12} fill="currentColor" />
+                  <span>{Math.abs(item.score - item.dhruvScore) < 0.01 ? "Tie" : item.score > item.dhruvScore ? "You Lead" : "Dhruv Leads"}</span>
+                </div>
                 {item.studyGap > 0 && (
                   <div className="gap-indicator warning">
                     <AlertCircle size={12} />
                     <span>{item.studyGap} Gap ({item.classGap}C/{item.labGap}L)</span>
                   </div>
                 )}
-                <div className="score-badge">
+                <div className="score-badge" style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}>
                   <Award size={14} />
-                  <span>Marks: {item.score}/100</span>
+                  <span style={{ color: '#92400e' }}>You: <strong>{format2(item.score)}</strong> | Dhruv: <strong style={{ color: '#d97706' }}>{format2(item.dhruvScore)}</strong></span>
                 </div>
               </div>
             </div>
@@ -2008,18 +2535,27 @@ function SummaryView({ tasks, subjects }) {
                 <div className="detail-row">
                   <div className="detail-label">
                     <span>Class</span>
-                    <span className="count-small">{item.class.attendanceCount}/{item.class.total}</span>
+                    <span className="count-small">{item.class.attendanceCount}/{item.class.total} (U) | {item.class.dhruvAttendanceCount}/{item.class.total} (D)</span>
                   </div>
-                  <div className="detail-bar-bg"><div className="detail-bar class-bar" style={{ width: `${item.class.attendancePercent}%` }}></div></div>
+                  <div className="detail-bar-bg">
+                    <div className="detail-bar class-bar" style={{ width: `${item.class.attendancePercent}%`, opacity: 0.6 }}></div>
+                    <div className="detail-bar class-bar" style={{ width: `${item.class.dhruvAttendancePercent}%`, position: 'absolute', top: 0, height: '4px', background: '#f59e0b' }}></div>
+                  </div>
                 </div>
                 <div className="detail-row">
                   <div className="detail-label">
                     <span>Lab</span>
-                    <span className="count-small">{item.lab.attendanceCount}/{item.lab.total}</span>
+                    <span className="count-small">{item.lab.attendanceCount}/{item.lab.total} (U) | {item.lab.dhruvAttendanceCount}/{item.lab.total} (D)</span>
                   </div>
-                  <div className="detail-bar-bg"><div className="detail-bar lab-bar" style={{ width: `${item.lab.attendancePercent}%` }}></div></div>
+                  <div className="detail-bar-bg">
+                    <div className="detail-bar lab-bar" style={{ width: `${item.lab.attendancePercent}%`, opacity: 0.6 }}></div>
+                    <div className="detail-bar lab-bar" style={{ width: `${item.lab.dhruvAttendancePercent}%`, position: 'absolute', top: 0, height: '4px', background: '#f59e0b' }}></div>
+                  </div>
                 </div>
-                <div className="total-badge att">Attended: {Math.round(item.attWeighted)}%</div>
+                <div className="total-badge att" style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                  <span>You: {format2(item.attWeighted)}%</span>
+                  <span>Dhruv: {format2(item.dhruvAttWeighted)}%</span>
+                </div>
               </div>
 
               <div className="vertical-divider"></div>
@@ -2040,37 +2576,50 @@ function SummaryView({ tasks, subjects }) {
                   </div>
                   <div className="detail-bar-bg"><div className="detail-bar completion-bar" style={{ width: `${item.lab.completionPercent}%` }}></div></div>
                 </div>
-                <div className="total-badge comp">Completed: {Math.round(item.compWeighted)}%</div>
+                <div className="total-badge comp">Completed: {format2(item.compWeighted)}%</div>
               </div>
             </div>
 
-            <div className="score-breakdown-row">
-              <div className="score-item">
-                <span className="s-label">Attendance ({Math.round(item.weights.attendance * 100)}%)</span>
-                <div className="mini-score-bar"><div className="fill" style={{ width: `${item.attWeighted}%`, backgroundColor: '#8b5cf6' }}></div></div>
-              </div>
-              <div className="score-item">
-                <span className="s-label">Assignments ({Math.round(item.weights.assignment * 100)}%)</span>
-                <div className="mini-score-bar"><div className="fill" style={{ width: `${item.class.assignmentPercent}%` }}></div></div>
-              </div>
-              <div className="score-item">
-                <span className="s-label">Projects ({Math.round(item.weights.project * 100)}%)</span>
-                <div className="mini-score-bar project-bar"><div className="fill" style={{ width: `${item.class.projectPercent}%` }}></div></div>
-              </div>
-              {item.weights.contest > 0 && (
-                <div className="score-item">
-                  <span className="s-label">Contests ({Math.round(item.weights.contest * 100)}%)</span>
-                  <div className="mini-score-bar contest-bar"><div className="fill" style={{ width: `${item.class.contestPercent}%` }}></div></div>
-                </div>
-              )}
-              <div className="score-item">
-                <span className="s-label">Mid Sem ({Math.round(item.weights.midSem * 100)}%)</span>
-                <div className="mini-score-bar mid-bar"><div className="fill" style={{ width: `${item.class.midPercent}%` }}></div></div>
-              </div>
-              <div className="score-item">
-                <span className="s-label">End Sem ({Math.round(item.weights.endSem * 100)}%)</span>
-                <div className="mini-score-bar end-bar"><div className="fill" style={{ width: `${item.class.endPercent}%` }}></div></div>
-              </div>
+            <div className="score-breakdown-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+              {[
+                { label: 'Attendance', key: 'attendance', color: '#8b5cf6', weightKey: 'attendance' },
+                { label: 'Assignments', key: 'assignment', color: '#6366f1', weightKey: 'assignment' },
+                { label: 'Projects', key: 'project', color: '#8b5cf6', weightKey: 'project' },
+                { label: 'Contests', key: 'contest', color: '#10b981', weightKey: 'contest' },
+                { label: 'Mid Sem', key: 'midSem', color: '#f59e0b', weightKey: 'midSem' },
+                { label: 'End Sem', key: 'endSem', color: '#3b82f6', weightKey: 'endSem' }
+              ].map(comp => (
+                (item.weights[comp.weightKey] > 0 || comp.key === 'attendance') && (
+                  <div key={comp.key} className="score-item">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <span className="s-label">{comp.label}</span>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8' }}>/{format2(item.weights[comp.weightKey] * 100)}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700 }}>
+                        <span style={{ color: comp.color }}>{format2(item.breakdown[comp.key])}</span>
+                        <span style={{ color: '#f59e0b' }}>{format2(item.dhruvBreakdown[comp.key])}</span>
+                      </div>
+                      <div className="mini-score-bar" style={{ height: '8px', background: '#f1f5f9', position: 'relative' }}>
+                        <div className="fill" style={{
+                          width: `${(item.breakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`,
+                          backgroundColor: comp.color,
+                          height: '100%',
+                          opacity: 0.7
+                        }}></div>
+                        <div className="fill" style={{
+                          width: `${(item.dhruvBreakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`,
+                          backgroundColor: '#f59e0b',
+                          height: '3px',
+                          position: 'absolute',
+                          bottom: 0,
+                          left: 0
+                        }}></div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              ))}
             </div>
           </div>
         ))}
