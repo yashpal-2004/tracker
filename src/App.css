@@ -1330,43 +1330,123 @@ input[type="checkbox"]:hover {
 .exam-countdown {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 10px;
-  font-size: 0.8rem;
-  font-weight: 700;
-  border: 1px solid rgba(0, 0, 0, 0.03);
+  gap: 12px;
+  padding: 8px 16px;
+  border-radius: 14px;
+  font-size: 0.85rem;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.05);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  position: relative;
+  overflow: hidden;
+}
+
+.exam-countdown::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+}
+
+.exam-countdown.contest::before {
+  background: #f59e0b;
+}
+
+.exam-countdown.exam::before {
+  background: #3b82f6;
 }
 
 .exam-countdown:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 10, 0.05);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
 .exam-countdown.contest {
-  background: #fffbeb;
+  background: linear-gradient(to right, #fffdfa, #fffbeb);
   border-color: #fef3c7;
-  color: #92400e;
 }
 
 .exam-countdown.exam {
-  background: #f0f9ff;
+  background: linear-gradient(to right, #fcfdff, #f0f9ff);
   border-color: #e0f2fe;
+}
+
+.countdown-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.countdown-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.countdown-timer {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  /* Good for numbers */
+}
+
+.time-unit {
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.time-unit strong {
+  font-weight: 800;
+  color: var(--text-main);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.exam-countdown.contest .time-unit strong {
+  color: #92400e;
+}
+
+.exam-countdown.exam .time-unit strong {
   color: #0369a1;
 }
 
-.count-days {
-  color: inherit;
-  font-weight: 900;
-  background: rgba(0, 0, 0, 0.05);
-  padding: 2px 8px;
-  border-radius: 6px;
+.count-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
-.count-label {
-  opacity: 0.8;
+.pulse-icon {
+  animation: pulse-warn 1.5s infinite;
+}
+
+@keyframes pulse-warn {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .urgent-badge {
@@ -1377,8 +1457,25 @@ input[type="checkbox"]:hover {
   font-size: 0.65rem;
   letter-spacing: 0.05em;
   font-weight: 900;
-  margin-left: 4px;
-  animation: pulse 2s infinite;
+  margin-left: 8px;
+  animation: urgent-pulse 2s infinite;
+}
+
+@keyframes urgent-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
 }
 
 .text-warning {
@@ -1387,4 +1484,11 @@ input[type="checkbox"]:hover {
 
 .text-secondary {
   color: #64748b;
+}
+
+@media (max-width: 600px) {
+  .exam-countdown {
+    width: 100%;
+    justify-content: center;
+  }
 }

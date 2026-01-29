@@ -55,7 +55,8 @@ import {
   ShieldCheck,
   TrendingUp,
   Activity,
-  Archive
+  Archive,
+  Search
 } from 'lucide-react';
 
 const DEFAULT_SUBJECTS = [
@@ -208,7 +209,16 @@ function App() {
   const updateTask = async (id, updates) => {
     try {
       const task = tasks.find(t => t.id === id);
-      const res = await updateDoc(doc(db, 'tasks', id), updates);
+
+      const finalUpdates = { ...updates };
+      // Auto-timestamp completion
+      if (updates.completed === true && (!task || !task.completed)) {
+        finalUpdates.completedAt = Date.now();
+      } else if (updates.completed === false) {
+        finalUpdates.completedAt = null;
+      }
+
+      const res = await updateDoc(doc(db, 'tasks', id), finalUpdates);
 
       // Delta Sync for Dhruv
       if (task && task.type === 'lecture' && 'present' in updates) {
@@ -299,11 +309,11 @@ function App() {
         </header>
 
         {activeSubject === 'Marks Overview' ? (
-          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="overview" />
+          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="overview" onUpdate={updateTask} />
         ) : activeSubject === 'Detailed Analysis' ? (
-          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="detailed" />
+          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="detailed" onUpdate={updateTask} />
         ) : activeSubject === 'Pending Work' ? (
-          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="pending" />
+          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="pending" onUpdate={updateTask} />
         ) : activeSubject === 'All Lectures' ? (
           <AllLecturesView
             tasks={tasks}
@@ -316,7 +326,7 @@ function App() {
         ) : activeSubject === 'Exam Schedule' ? (
           <ScheduleView tasks={tasks} />
         ) : activeSubject === 'Safe Zone' ? (
-          <SafeZoneView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} />
+          <SafeZoneView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} setThreshold={setAttendanceThreshold} />
         ) : (
           <div className="sections-container">
             <TaskSection
@@ -502,6 +512,14 @@ function Sidebar({ subjects, activeSubject, onSelect }) {
 }
 
 function BookmarkBar() {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    // Update more frequently to ensure seconds flip close to real time
+    const timer = setInterval(() => setTime(new Date()), 250);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <div className="bookmark-bar glass">
       <div className="bookmark-items">
@@ -535,7 +553,18 @@ function BookmarkBar() {
           <span>Notes Builder AI</span>
         </a>
         <div className="bookmark-divider" style={{ margin: '0 16px' }}></div>
-        <ExamCountdown />
+
+        <div className="bookmark-item" style={{ cursor: 'default', background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.8)' }}>
+          <Clock size={14} style={{ color: '#6366f1' }} />
+          <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', fontSize: '0.85rem', color: '#1e293b' }}>
+            {time.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}
+            <span style={{ margin: '0 6px', opacity: 0.3 }}>|</span>
+            {time.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </span>
+        </div>
+
+        <div className="bookmark-divider" style={{ margin: '0 16px' }}></div>
+        <ExamCountdown now={time} />
       </div>
     </div>
   );
@@ -2306,76 +2335,170 @@ function ContestScheduleTable() {
 }
 
 function ActivityHeatmap({ tasks }) {
-  const activityData = useMemo(() => {
+  const { activityData, stats } = useMemo(() => {
     const data = {};
     const today = new Date();
-    // Last 90 days
+    // Last 90 days to cover roughly 3 months
+    const dates = [];
     for (let i = 0; i < 90; i++) {
       const d = new Date();
       d.setDate(today.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
+      dates.push(dateStr);
       data[dateStr] = 0;
     }
+    dates.reverse(); // Chronological order
+
+    let totalActivities = 0;
 
     tasks.forEach(task => {
-      // Only track completed items for work done metrics
       if (['lecture', 'assignment', 'quiz'].includes(task.type) && !task.completed) return;
 
       let dateStr = '';
-      try {
-        if (task.date) {
-          dateStr = task.date;
-        } else if (task.createdAt) {
-          const d = new Date(task.createdAt);
-          if (!isNaN(d.getTime())) {
-            dateStr = d.toISOString().split('T')[0];
-          }
-        }
-      } catch (e) {
-        console.error("Heatmap date error:", e);
+      // Prioritize ACTUAL activity timestamp (completion or creation) over scheduled date
+      const activityDate = task.completedAt || task.createdAt || task.date;
+
+      if (activityDate) {
+        const d = new Date(activityDate);
+        if (!isNaN(d.getTime())) dateStr = d.toISOString().split('T')[0];
       }
 
       if (dateStr && data[dateStr] !== undefined) {
         data[dateStr] += 1;
+        totalActivities++;
       }
     });
 
-    return Object.entries(data).reverse();
+    // Calculate Streaks
+    let currentStreak = 0;
+    let maxStreak = 0;
+    let tempStreak = 0;
+
+    // Iterate chronologically
+    dates.forEach(date => {
+      if (data[date] > 0) {
+        tempStreak++;
+        maxStreak = Math.max(maxStreak, tempStreak);
+      } else {
+        tempStreak = 0;
+      }
+    });
+
+    // For current streak, check backwards from today
+    // If today has activity or yesterday has activity (allowing for today to be incomplete)
+    let checkIndex = dates.length - 1;
+    if (data[dates[checkIndex]] > 0) {
+      // Active today
+      while (checkIndex >= 0 && data[dates[checkIndex]] > 0) {
+        currentStreak++;
+        checkIndex--;
+      }
+    } else if (checkIndex > 0 && data[dates[checkIndex - 1]] > 0) {
+      // Active yesterday, so streak is alive
+      checkIndex--; // Start from yesterday
+      while (checkIndex >= 0 && data[dates[checkIndex]] > 0) {
+        currentStreak++;
+        checkIndex--;
+      }
+    }
+
+
+    const sortedData = dates.map(date => ({ date, count: data[date] }));
+    const totalActiveDays = Object.values(data).filter(c => c > 0).length;
+
+    return {
+      activityData: sortedData,
+      stats: { totalActivities, maxStreak, currentStreak, totalActiveDays }
+    };
   }, [tasks]);
 
+  const getColor = (count) => {
+    if (count === 0) return '#f1f5f9'; // Slate-100
+    if (count === 1) return '#c7d2fe'; // Indigo-200
+    if (count === 2) return '#a5b4fc'; // Indigo-300
+    if (count <= 4) return '#6366f1'; // Indigo-500
+    return '#4338ca'; // Indigo-700
+  };
+
   return (
-    <div className="heatmap-container glass">
-      <div className="heatmap-header">
-        <h4><Zap size={16} /> Activity Heatmap (Last 90 Days)</h4>
-        <div className="heatmap-legend">
-          <span>Less</span>
-          <div className="legend-box level-0"></div>
-          <div className="legend-box level-1"></div>
-          <div className="legend-box level-2"></div>
-          <div className="legend-box level-3"></div>
-          <span>More</span>
+    <div className="heatmap-container glass" style={{ padding: '24px' }}>
+      <div className="heatmap-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '24px', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+          <h4 style={{ fontSize: '1.25rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+            <Zap size={20} className="text-primary" fill="currentColor" />
+            Activity Heatmap
+          </h4>
+          <div className="heatmap-legend" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>
+            <span>Less</span>
+            {[0, 1, 3, 5, 8].map((level, i) => (
+              <div key={i} style={{
+                width: '12px',
+                height: '12px',
+                borderRadius: '3px',
+                background: getColor(level),
+                border: level === 0 ? '1px solid #e2e8f0' : 'none'
+              }}></div>
+            ))}
+            <span>More</span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '24px', width: '100%' }}>
+          <div className="stat-pill glass" style={{ flex: 1, padding: '16px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.5)' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Days</span>
+            <span style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1e293b' }}>{stats.totalActiveDays} <small style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 600 }}>Days</small></span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8' }}>{stats.totalActivities} Total Items</span>
+          </div>
+          <div className="stat-pill glass" style={{ flex: 1, padding: '16px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.5)' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Max Streak</span>
+            <span style={{ fontSize: '1.5rem', fontWeight: 800, color: '#f59e0b' }}>{stats.maxStreak} Days</span>
+          </div>
+          <div className="stat-pill glass" style={{ flex: 1, padding: '16px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.5)' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Current Streak</span>
+            <span style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10b981' }}>{stats.currentStreak} Days</span>
+          </div>
         </div>
       </div>
-      <div className="heatmap-grid">
-        {activityData.map(([date, count]) => {
-          let level = 0;
-          if (count > 0) level = 1;
-          if (count > 2) level = 2;
-          if (count > 4) level = 3;
-          return (
-            <div
-              key={date}
-              className={`heatmap-cell level-${level}`}
-              title={`${date}: ${count} activities`}
-            ></div>
-          );
-        })}
+
+      <div className="heatmap-grid" style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(14px, 1fr))',
+        gap: '4px',
+        marginTop: '16px'
+      }}>
+        {activityData.map(({ date, count }) => (
+          <div
+            key={date}
+            style={{
+              aspectRatio: '1',
+              borderRadius: '4px',
+              background: getColor(count),
+              border: count === 0 ? '1px solid #e2e8f0' : 'none',
+              transition: 'all 0.2s',
+              cursor: 'pointer',
+              position: 'relative'
+            }}
+            title={`${date}: ${count} activities`}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.2)';
+              e.currentTarget.style.zIndex = '10';
+              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.zIndex = '1';
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          >
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function SummaryView({ tasks, subjects, threshold, mode = 'overview' }) {
+function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }) {
+  const [confirmTask, setConfirmTask] = useState(null);
   const getSubjectScore = (data, name, isDhruv = false) => {
     const { weights } = getSubjectWeights(name);
 
@@ -2973,61 +3096,320 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview' }) {
       )}
 
       {mode === 'pending' && (
-        <div className="pending-work-repository glass shadow-lg" style={{ padding: '24px' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', fontSize: '1.2rem', fontWeight: 800 }}>
-            <Clock size={20} style={{ color: '#f43f5e' }} />
-            Detailed Pending Lectures List
-          </h3>
-          <div className="pending-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-            {summaryData.items.filter(i => i.studyGap > 0).map(item => (
-              <div key={item.name} className="pending-subject-card glass" style={{ padding: '16px', borderLeft: '4px solid #f43f5e' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h4 style={{ color: 'var(--primary)', fontWeight: 800 }}>{item.name}</h4>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#f43f5e', background: '#fff1f2', padding: '2px 8px', borderRadius: '100px' }}>
-                    {item.studyGap} Left
-                  </span>
-                </div>
-                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {tasks.filter(t => t.subjectName === item.name && t.type === 'lecture' && !t.completed)
-                    .sort((a, b) => new Date(a.date) - new Date(b.date))
-                    .map(task => (
-                      <li key={task.id} style={{
-                        fontSize: '0.85rem',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        padding: '8px 12px',
-                        background: 'white',
-                        borderRadius: '8px',
-                        border: '1px solid #f1f5f9',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
-                      }}>
-                        <span style={{ fontWeight: 600 }}>{task.name}</span>
-                        <span style={{ opacity: 0.6, fontSize: '0.75rem', fontWeight: 700 }}>{formatDate(task.date)}</span>
-                      </li>
-                    ))}
-                </ul>
+        <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '32px',
+            background: 'rgba(255, 255, 255, 0.8)',
+            backdropFilter: 'blur(12px)',
+            padding: '20px 24px',
+            borderRadius: '24px',
+            border: '1px solid rgba(255, 255, 255, 0.5)',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)'
+          }}>
+            <h3 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '16px', margin: 0 }}>
+              <div style={{ padding: '10px', background: '#ffe4e6', borderRadius: '16px', color: '#f43f5e', boxShadow: '0 2px 5px rgba(244, 63, 94, 0.2)' }}>
+                <Clock size={28} strokeWidth={2.5} />
               </div>
-            ))}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span>Pending Work Queue</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#64748b' }}>Track and complete your backlog</span>
+              </div>
+            </h3>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ padding: '8px 16px', borderRadius: '100px', background: '#eff6ff', color: '#3b82f6', fontSize: '0.85rem', fontWeight: 700, border: '1px solid #dbeafe' }}>
+                {tasks.filter(t => t.type === 'lecture' && !t.completed).length} Total Pending
+              </div>
+            </div>
           </div>
-          {summaryData.grandTotalPending === 0 && (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#10b981' }}>
-              <Trophy size={48} style={{ marginBottom: '12px', opacity: 0.5 }} />
-              <p style={{ fontWeight: 800 }}>Amazing! You are all caught up on all lectures.</p>
+
+          <div style={{ columns: '1', columnGap: '24px', maxWidth: '100%' }}>
+            {/* Use a simple grid for responsiveness if columns doesn't work well or use media query logic in CSS, but inline style columns is decent for masonry */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '24px' }}>
+              {subjects.map(subjectName => {
+                const pendingTasks = tasks
+                  .filter(t => t.subjectName === subjectName && t.type === 'lecture' && !t.completed)
+                  .sort((a, b) => new Date(a.date || a.createdAt) - new Date(b.date || b.createdAt));
+
+                if (pendingTasks.length === 0) return null;
+
+                return (
+                  <div key={subjectName} className="pending-card glass" style={{
+                    breakInside: 'avoid',
+                    marginBottom: '0',
+                    borderRadius: '24px',
+                    border: '1px solid rgba(255, 255, 255, 0.6)',
+                    overflow: 'hidden',
+                    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}>
+                    <div style={{
+                      padding: '16px 20px',
+                      background: 'linear-gradient(to right, rgba(255,255,255,0.9), rgba(255,255,255,0.5))',
+                      borderBottom: '1px solid rgba(0,0,0,0.05)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <h4 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6' }}></div>
+                        {subjectName}
+                      </h4>
+                      <span style={{
+                        background: '#f1f5f9',
+                        color: '#475569',
+                        padding: '4px 10px',
+                        borderRadius: '100px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        border: '1px solid #e2e8f0'
+                      }}>
+                        {pendingTasks.length}
+                      </span>
+                    </div>
+
+                    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {pendingTasks.map(task => {
+                        // Lecture specific styling
+                        const Icon = BookOpen;
+                        const colorClass = '#3b82f6';
+                        const bgClass = '#eff6ff';
+
+                        return (
+                          <div key={task.id} style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            padding: '12px',
+                            background: 'rgba(255,255,255,0.6)',
+                            borderRadius: '16px',
+                            border: '1px solid rgba(255,255,255,0.8)',
+                            transition: 'all 0.2s ease',
+                            cursor: 'pointer'
+                          }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'translateY(-2px)';
+                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+                              e.currentTarget.style.background = 'white';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'none';
+                              e.currentTarget.style.boxShadow = 'none';
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.6)';
+                            }}
+                          >
+                            <div style={{
+                              padding: '10px',
+                              borderRadius: '12px',
+                              background: bgClass,
+                              color: colorClass,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              <Icon size={18} strokeWidth={2.5} />
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', fontWeight: 700, color: '#1e293b', fontSize: '0.95rem' }}>
+                                <span style={{ color: '#64748b', marginRight: '8px', background: '#f1f5f9', padding: '2px 6px', borderRadius: '6px', fontSize: '0.8em', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>#{task.number}</span>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.name}</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: colorClass, textTransform: 'capitalize' }}>
+                                  {task.type === 'midSem' ? 'Mid Sem' : task.type === 'endSem' ? 'End Sem' : task.type}
+                                </span>
+                                {task.date && (
+                                  <>
+                                    <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: '#cbd5e1' }}></span>
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8' }}>
+                                      {formatDate(task.date)}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onUpdate) {
+                                  setConfirmTask(task);
+                                }
+                              }}
+                              style={{
+                                padding: '8px',
+                                borderRadius: '10px',
+                                border: '1px solid #e2e8f0',
+                                background: 'white',
+                                color: '#cbd5e1',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#f0fdf4';
+                                e.currentTarget.style.borderColor = '#bbf7d0';
+                                e.currentTarget.style.color = '#166534';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'white';
+                                e.currentTarget.style.borderColor = '#e2e8f0';
+                                e.currentTarget.style.color = '#cbd5e1';
+                              }}
+                              title="Mark as Done"
+                            >
+                              <Check size={18} strokeWidth={3} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {summaryData.grandTotalPending === 0 && tasks.filter(t => !t.completed).length === 0 && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '60px',
+              marginTop: '40px',
+              background: 'rgba(255,255,255,0.5)',
+              borderRadius: '32px',
+              backdropFilter: 'blur(10px)',
+              border: '1px dashed #cbd5e1'
+            }}>
+              <div style={{ padding: '24px', background: '#f0fdf4', borderRadius: '50%', marginBottom: '24px' }}>
+                <Trophy size={64} style={{ color: '#10b981' }} strokeWidth={1.5} />
+              </div>
+              <h3 style={{ fontSize: '2rem', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>All Caught Up!</h3>
+              <p style={{ color: '#64748b', fontSize: '1.1rem', fontWeight: 600 }}>You have 0 pending items. Time to relax!</p>
             </div>
           )}
         </div>
       )}
 
+      {confirmTask && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          animation: 'fadeIn 0.2s ease-out'
+        }} onClick={() => setConfirmTask(null)}>
+          <div style={{
+            background: 'white',
+            borderRadius: '24px',
+            padding: '32px',
+            maxWidth: '400px',
+            width: '90%',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            transform: 'scale(1)',
+            animation: 'scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+            border: '1px solid #f1f5f9'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              background: '#ecfdf5',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '20px',
+              color: '#059669'
+            }}>
+              <CheckCircle2 size={32} strokeWidth={2.5} />
+            </div>
+            <h3 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>
+              Mark as Completed?
+            </h3>
+            <p style={{ color: '#64748b', fontSize: '1rem', lineHeight: '1.5', marginBottom: '24px' }}>
+              Are you sure you want to mark <strong style={{ color: '#334155' }}>"{confirmTask.name}"</strong> as done? This will remove it from your pending list.
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setConfirmTask(null)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '12px',
+                  border: '1px solid #e2e8f0',
+                  background: 'white',
+                  color: '#475569',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={e => e.target.style.background = '#f8fafc'}
+                onMouseLeave={e => e.target.style.background = 'white'}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (onUpdate) {
+                    await onUpdate(confirmTask.id, { completed: true, present: true });
+                  }
+                  setConfirmTask(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: '#10b981',
+                  color: 'white',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)',
+                  transition: 'transform 0.1s'
+                }}
+                onMouseEnter={e => e.target.style.background = '#059669'}
+                onMouseLeave={e => e.target.style.background = '#10b981'}
+                onMouseDown={e => e.target.style.transform = 'scale(0.98)'}
+                onMouseUp={e => e.target.style.transform = 'scale(1)'}
+              >
+                Yes, Complete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function SafeZoneView({ tasks, subjects, threshold }) {
+function SafeZoneView({ tasks, subjects, threshold, setThreshold }) {
+  const target = threshold;
+
   const subjectGroups = useMemo(() => {
     const groups = {};
     subjects.forEach(s => {
       const baseName = s.replace(' Class', '').replace(' Lab', '');
-      if (!groups[baseName]) groups[baseName] = { class: {}, lab: {} };
+      if (!groups[baseName]) {
+        groups[baseName] = {
+          class: { total: 0, attendanceCount: 0, attendancePercent: 0 },
+          lab: { total: 0, attendanceCount: 0, attendancePercent: 0 }
+        };
+      }
 
       const subjectTasks = tasks.filter(t => t.subjectName === s);
       const lects = subjectTasks.filter(t => t.type === 'lecture');
@@ -3045,104 +3427,119 @@ function SafeZoneView({ tasks, subjects, threshold }) {
     return groups;
   }, [tasks, subjects]);
 
-  const calculateSkips = (item, target) => {
-    const pC = item.class.attendanceCount;
-    const tC = item.class.total;
-    const pL = item.lab.attendanceCount;
-    const tL = item.lab.total;
-    const targetW = target / 100;
+  const calculateZone = (stats, weight, otherStats, otherWeight, targetVal) => {
+    if (stats.total === 0) return { status: 'nodata', msg: 'No Data', sub: 'Empty' };
 
-    if (tC === 0 || tL === 0) return { status: 'no-data', msg: 'No lectures logged' };
+    const tPct = targetVal / 100;
+    const otherContrib = (otherStats.attendancePercent / 100) * otherWeight;
 
-    const currentW = (item.class.attendancePercent * 0.6) + (item.lab.attendancePercent * 0.4);
+    // weight * req + otherContrib >= tPct
+    // req >= (tPct - otherContrib) / weight
+    const req = (tPct - otherContrib) / weight;
 
-    if (currentW >= target) {
-      const targetC = (targetW - 0.4 * (pL / tL)) / 0.6;
-      const targetL = (targetW - 0.6 * (pC / tC)) / 0.4;
+    if (req > 1) return { status: 'danger', msg: 'Unreachable', sub: 'Maximize Other' };
+    if (req <= 0) return { status: 'safe', msg: 'MAX', sub: 'Always Safe' };
 
-      const skipC = targetC > 0 ? Math.floor((pC / targetC) - tC) : 0;
-      const skipL = targetL > 0 ? Math.floor((pL / targetL) - tL) : 0;
+    const current = stats.attendanceCount / stats.total;
 
-      return {
-        status: 'safe',
-        skipC: Math.max(0, skipC),
-        skipL: Math.max(0, skipL)
-      };
+    if (current >= req) {
+      // Safe: How many skips?
+      // (P) / (T + k) >= req  => k <= P/req - T
+      const k = Math.floor(stats.attendanceCount / req - stats.total);
+      return { status: 'safe', msg: Math.max(0, k), sub: 'Skips Left' };
     } else {
-      const targetC = (targetW - 0.4 * (pL / tL)) / 0.6;
-      const targetL = (targetW - 0.6 * (pC / tC)) / 0.4;
-      const needRatioC = 1 - targetC;
-      const needRatioL = 1 - targetL;
-
-      const needC = targetC <= 1 ? Math.ceil((targetC * tC - pC) / needRatioC) : 'Max/Attended';
-      const needL = targetL <= 1 ? Math.ceil((targetL * tL - pL) / needRatioL) : 'Max/Attended';
-
-      return {
-        status: 'danger',
-        needC,
-        needL
-      };
+      // Danger: How many need?
+      // (P + k) / (T + k) >= req => k >= (req*T - P)/(1-req)
+      const k = Math.ceil((req * stats.total - stats.attendanceCount) / (1 - req));
+      return { status: 'danger', msg: Math.max(0, k), sub: 'To Attend' };
     }
   };
 
   return (
-    <div className="safe-zone-manager glass shadow-lg" style={{ padding: '32px' }}>
-      <header style={{ marginBottom: '32px' }}>
-        <h2 style={{ fontSize: '2rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <ShieldCheck size={32} style={{ color: '#10b981' }} />
-          Attendance Skip Manager
-        </h2>
-        <p style={{ color: 'var(--text-muted)', fontWeight: 600, marginTop: '8px' }}>
-          Target Threshold: <span style={{ color: 'var(--primary)', fontWeight: 800 }}>{threshold}%</span> (Weighted: 60% Class | 40% Lab)
+    <div className="safe-zone-manager glass" style={{ padding: '32px' }}>
+      <header style={{ marginBottom: '32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          <h2 style={{ fontSize: '1.8rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px', color: '#1e293b' }}>
+            <ShieldCheck size={32} style={{ color: '#10b981' }} />
+            Skip Manager
+          </h2>
+
+          <div className="glass" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Target Goal</span>
+              <span style={{ fontSize: '1.5rem', fontWeight: 900, color: '#3b82f6', lineHeight: 1 }}>{target}%</span>
+            </div>
+            <input
+              type="range"
+              min="60"
+              max="95"
+              step="1"
+              value={target}
+              onChange={e => setThreshold(parseInt(e.target.value))}
+              style={{ width: '140px', accentColor: '#3b82f6', cursor: 'grab' }}
+            />
+          </div>
+        </div>
+        <p style={{ color: '#64748b', fontSize: '0.95rem', maxWidth: '600px' }}>
+          Adjust the slider to simulate different attendance targets. Calculations are based on a
+          <strong style={{ color: '#334155' }}> 60% Class / 40% Lab</strong> weighted split.
         </p>
       </header>
 
-      <div className="safe-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '24px' }}>
         {Object.entries(subjectGroups).map(([name, item]) => {
-          const zone = calculateSkips(item, threshold);
+          const weighted = (item.class.attendancePercent * 0.6 + item.lab.attendancePercent * 0.4).toFixed(1);
+          const isSafe = parseFloat(weighted) >= target;
+
+          // Analyze Components
+          const classZone = calculateZone(item.class, 0.6, item.lab, 0.4, target);
+          const labZone = calculateZone(item.lab, 0.4, item.class, 0.6, target);
+
           return (
-            <div key={name} className={`safe-card glass ${zone.status}`} style={{
+            <div key={name} className="glass" style={{
               padding: '24px',
-              borderRadius: '20px',
-              border: `1px solid ${zone.status === 'safe' ? '#bbf7d0' : zone.status === 'danger' ? '#fecaca' : '#e2e8f0'}`,
-              background: zone.status === 'safe' ? 'rgba(16, 185, 129, 0.02)' : zone.status === 'danger' ? 'rgba(239, 68, 68, 0.02)' : 'white'
+              borderRadius: '24px',
+              border: `1px solid ${isSafe ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+              background: isSafe ? 'rgba(240, 253, 244, 0.4)' : 'rgba(254, 242, 242, 0.4)',
+              transition: 'transform 0.2s',
+              position: 'relative',
+              overflow: 'hidden'
             }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '20px', color: 'var(--text-main)' }}>{name}</h3>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: isSafe ? '#10b981' : '#ef4444' }}></div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                  <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>Class (60%)</p>
-                  {zone.status === 'safe' ? (
-                    <div style={{ color: '#059669' }}>
-                      <span style={{ fontSize: '1.8rem', fontWeight: 900 }}>{zone.skipC}</span>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 700, marginLeft: '4px' }}>Skips left</span>
-                    </div>
-                  ) : (
-                    <div style={{ color: '#dc2626' }}>
-                      <span style={{ fontSize: typeof zone.needC === 'string' ? '1rem' : '1.8rem', fontWeight: 900 }}>{zone.needC}</span>
-                      {typeof zone.needC === 'number' && <span style={{ fontSize: '0.8rem', fontWeight: 700, marginLeft: '4px' }}>to attend</span>}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-                  <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>Lab (40%)</p>
-                  {zone.status === 'safe' ? (
-                    <div style={{ color: '#059669' }}>
-                      <span style={{ fontSize: '1.8rem', fontWeight: 900 }}>{zone.skipL}</span>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 700, marginLeft: '4px' }}>Skips left</span>
-                    </div>
-                  ) : (
-                    <div style={{ color: '#dc2626' }}>
-                      <span style={{ fontSize: typeof zone.needL === 'string' ? '1rem' : '1.8rem', fontWeight: 900 }}>{zone.needL}</span>
-                      {typeof zone.needL === 'number' && <span style={{ fontSize: '0.8rem', fontWeight: 700, marginLeft: '4px' }}>to attend</span>}
-                    </div>
-                  )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1e293b' }}>{name}</h3>
+                <div style={{ padding: '6px 12px', borderRadius: '100px', background: isSafe ? '#dcfce7' : '#fee2e2', color: isSafe ? '#15803d' : '#b91c1c', fontSize: '0.9rem', fontWeight: 800 }}>
+                  {weighted}% Current
                 </div>
               </div>
 
-              <div style={{ marginTop: '20px', padding: '12px', borderRadius: '10px', background: zone.status === 'safe' ? '#f0fdf4' : '#fef2f2', border: `1px solid ${zone.status === 'safe' ? '#d1fae5' : '#fee2e2'}`, fontSize: '0.85rem', fontWeight: 700, color: zone.status === 'safe' ? '#065f46' : '#991b1b', textAlign: 'center' }}>
-                Current Weighted: {((item.class.attendancePercent * 0.6) + (item.lab.attendancePercent * 0.4)).toFixed(2)}%
+              <div style={{ display: 'flex', gap: '16px' }}>
+                {/* Class Box */}
+                <div style={{ flex: 1, background: 'white', padding: '16px', borderRadius: '16px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Class (60%)</span>
+                  <div style={{ fontSize: classZone.status === 'nodata' ? '1.2rem' : '2rem', fontWeight: 900, color: classZone.status === 'safe' ? '#10b981' : (classZone.status === 'nodata' ? '#cbd5e1' : '#f59e0b'), lineHeight: 1 }}>
+                    {classZone.msg}
+                  </div>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: classZone.status === 'safe' ? '#059669' : (classZone.status === 'nodata' ? '#94a3b8' : '#d97706') }}>{classZone.sub}</span>
+                  <div style={{ width: '100%', height: '1px', background: '#f1f5f9', margin: '4px 0' }}></div>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
+                    {item.class.attendanceCount} <span style={{ color: '#cbd5e1' }}>/</span> {item.class.total}
+                  </span>
+                </div>
+
+                {/* Lab Box */}
+                <div style={{ flex: 1, background: 'white', padding: '16px', borderRadius: '16px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Lab (40%)</span>
+                  <div style={{ fontSize: labZone.status === 'nodata' ? '1.2rem' : '2rem', fontWeight: 900, color: labZone.status === 'safe' ? '#10b981' : (labZone.status === 'nodata' ? '#cbd5e1' : '#f59e0b'), lineHeight: 1 }}>
+                    {labZone.msg}
+                  </div>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: labZone.status === 'safe' ? '#059669' : (labZone.status === 'nodata' ? '#94a3b8' : '#d97706') }}>{labZone.sub}</span>
+                  <div style={{ width: '100%', height: '1px', background: '#f1f5f9', margin: '4px 0' }}></div>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
+                    {item.lab.attendanceCount} <span style={{ color: '#cbd5e1' }}>/</span> {item.lab.total}
+                  </span>
+                </div>
               </div>
             </div>
           );
@@ -3451,15 +3848,42 @@ function ScheduleView({ tasks }) {
 
 function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
   const [filterSubject, setFilterSubject] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const allLectures = useMemo(() => {
     let filtered = tasks.filter(t => t.type === 'lecture');
+
+    // Subject Filter
     if (filterSubject !== 'All') {
       filtered = filtered.filter(t => t.subjectName === filterSubject);
     }
+
+    // Search Filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(t =>
+        (t.name && t.name.toLowerCase().includes(q)) ||
+        (t.number && t.number.toString().includes(q))
+      );
+    }
+
     // Sort by date descending (newest first)
     return filtered.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-  }, [tasks, filterSubject]);
+  }, [tasks, filterSubject, searchQuery]);
+
+  const stats = useMemo(() => {
+    const total = allLectures.length;
+    if (total === 0) return { total: 0, attendance: 0, completion: 0 };
+
+    const present = allLectures.filter(t => t.present !== false).length;
+    const completed = allLectures.filter(t => t.completed).length;
+
+    return {
+      total,
+      attendance: Math.round((present / total) * 100),
+      completion: Math.round((completed / total) * 100)
+    };
+  }, [allLectures]);
 
   const uniqueSubjects = useMemo(() => {
     const subs = new Set(tasks.map(t => t.subjectName));
@@ -3467,25 +3891,90 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
   }, [tasks]);
 
   return (
-    <div className="sections-container">
-      <section className="task-section lecture-section glass" style={{ width: '100%' }}>
-        <div className="section-header">
-          <div className="section-title-group">
-            <h3>All Lectures Repository</h3>
-            <p className="section-subtitle">{allLectures.length} total lectures</p>
+    <div className="sections-container" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+      {/* Stats Dashboard */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+        <div className="glass" style={{ padding: '24px', borderRadius: '24px', display: 'flex', alignItems: 'center', gap: '20px', background: 'linear-gradient(135deg, rgba(255,255,255,0.6), rgba(255,255,255,0.2))' }}>
+          <div style={{ padding: '16px', borderRadius: '16px', background: '#eff6ff', color: '#3b82f6', boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.1)' }}>
+            <Layers size={28} />
           </div>
-          <div className="filter-group" style={{ marginLeft: 'auto' }}>
+          <div>
+            <h3 style={{ fontSize: '2.2rem', fontWeight: 800, color: '#1e293b', lineHeight: 1 }}>{stats.total}</h3>
+            <p style={{ color: '#64748b', fontWeight: 700, fontSize: '0.9rem', marginTop: '4px' }}>Total Lectures</p>
+          </div>
+        </div>
+
+        <div className="glass" style={{ padding: '24px', borderRadius: '24px', display: 'flex', alignItems: 'center', gap: '20px', background: 'linear-gradient(135deg, rgba(255,255,255,0.6), rgba(255,255,255,0.2))' }}>
+          <div style={{ padding: '16px', borderRadius: '16px', background: '#dcfce7', color: '#15803d', boxShadow: '0 4px 6px -1px rgba(22, 163, 74, 0.1)' }}>
+            <CheckCircle2 size={28} />
+          </div>
+          <div>
+            <h3 style={{ fontSize: '2.2rem', fontWeight: 800, color: '#15803d', lineHeight: 1 }}>{stats.attendance}%</h3>
+            <p style={{ color: '#166534', fontWeight: 700, fontSize: '0.9rem', marginTop: '4px' }}>Attendance Rate</p>
+          </div>
+        </div>
+
+        <div className="glass" style={{ padding: '24px', borderRadius: '24px', display: 'flex', alignItems: 'center', gap: '20px', background: 'linear-gradient(135deg, rgba(255,255,255,0.6), rgba(255,255,255,0.2))' }}>
+          <div style={{ padding: '16px', borderRadius: '16px', background: '#e0e7ff', color: '#4338ca', boxShadow: '0 4px 6px -1px rgba(67, 56, 202, 0.1)' }}>
+            <CheckCircle2 size={28} />
+          </div>
+          <div>
+            <h3 style={{ fontSize: '2.2rem', fontWeight: 800, color: '#4338ca', lineHeight: 1 }}>{stats.completion}%</h3>
+            <p style={{ color: '#3730a3', fontWeight: 700, fontSize: '0.9rem', marginTop: '4px' }}>Completion Rate</p>
+          </div>
+        </div>
+      </div>
+
+      <section className="task-section lecture-section glass" style={{ width: '100%', padding: '24px' }}>
+        <div className="section-header" style={{ marginBottom: '24px', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
+          <div className="section-title-group" style={{ marginBottom: 0 }}>
+            <h3 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Repository</h3>
+            <p className="section-subtitle" style={{ fontSize: '0.9rem' }}>Searching {allLectures.length} files</p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+              <input
+                type="text"
+                placeholder="Search lectures..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{
+                  padding: '10px 10px 10px 36px',
+                  borderRadius: '12px',
+                  border: '1px solid #e2e8f0',
+                  background: 'white',
+                  color: '#1e293b',
+                  width: '240px',
+                  fontWeight: 600,
+                  outline: 'none',
+                  transition: 'all 0.2s'
+                }}
+                onFocus={e => e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.2)'}
+                onBlur={e => e.target.style.boxShadow = 'none'}
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}>
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
             <select
               value={filterSubject}
               onChange={(e) => setFilterSubject(e.target.value)}
               style={{
-                padding: '8px 12px',
-                borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.1)',
-                background: 'rgba(0,0,0,0.2)',
-                color: 'white',
+                padding: '10px 16px',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                background: 'white',
+                color: '#1e293b',
                 outline: 'none',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                fontWeight: 700,
+                minWidth: '140px'
               }}
             >
               {uniqueSubjects.map(s => <option key={s} value={s}>{s}</option>)}
@@ -3495,128 +3984,152 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
 
         <div className="task-list">
           <div className="task-list-header">
-            <span className="col-subject" style={{ flex: '0 0 100px', fontWeight: 600, color: 'rgba(255,255,255,0.7)', fontSize: '0.85em' }}>Subject</span>
-            <span className="col-number">No.</span>
-            <span className="col-name" style={{ flex: 1 }}>Name</span>
-            <span className="col-date">Date</span>
-            <span className="col-attendance">Attendance</span>
-            <span className="col-completion">Completed</span>
-            <span className="col-actions">Actions</span>
+            <span className="col-subject" style={{ flex: '0 0 100px', fontWeight: 700, color: '#94a3b8', fontSize: '0.8em', textTransform: 'uppercase' }}>Subject</span>
+            <span className="col-number" style={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.8em', textTransform: 'uppercase' }}>No.</span>
+            <span className="col-name" style={{ flex: 1, fontWeight: 700, color: '#94a3b8', fontSize: '0.8em', textTransform: 'uppercase' }}>Title</span>
+            <span className="col-date" style={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.8em', textTransform: 'uppercase' }}>Date</span>
+            <span className="col-attendance" style={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.8em', textTransform: 'uppercase' }}>Attendance</span>
+            <span className="col-completion" style={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.8em', textTransform: 'uppercase' }}>Status</span>
+            <span className="col-actions" style={{ fontWeight: 700, color: '#94a3b8', fontSize: '0.8em', textTransform: 'uppercase' }}>Actions</span>
           </div>
-          {allLectures.map(task => (
-            <div key={task.id} className={`task-item ${task.completed ? 'completed' : ''} ${task.important ? 'important-row' : ''}`}>
-              <div className="col-subject" style={{ flex: '0 0 100px', opacity: 0.8, fontSize: '0.9em', fontWeight: 500 }}>
-                {task.subjectName}
-              </div>
-              <div className="col-number">
-                <span className="task-number">#{task.number}</span>
-              </div>
-              <div className="col-name" style={{ flex: 1 }}>
-                <span className={`task-name ${task.important ? 'important' : ''}`}>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                    {task.notes ? (
-                      <a href={task.notes} target="_blank" rel="noreferrer" className="lecture-link">
-                        {task.name}
-                        <ExternalLink size={14} />
-                      </a>
-                    ) : (
-                      <span className="no-notes">
-                        {task.name} <em style={{ fontSize: '0.8em', opacity: 0.6 }}>(No Link)</em>
+          {allLectures.length === 0 ? (
+            <div style={{ padding: '60px', textAlign: 'center', color: '#64748b' }}>
+              <Search size={48} style={{ opacity: 0.2, marginBottom: '16px' }} />
+              <p style={{ fontSize: '1.2rem', fontWeight: 700 }}>No lectures found</p>
+              <p style={{ fontSize: '0.9rem' }}>Try adjusting your search or filter</p>
+            </div>
+          ) : (
+            allLectures.map(task => (
+              <div key={task.id} className={`task-item ${task.completed ? 'completed' : ''} ${task.important ? 'important-row' : ''}`}>
+                <div className="col-subject" style={{ flex: '0 0 100px', opacity: 0.8, fontSize: '0.9em', fontWeight: 700 }}>
+                  {task.subjectName}
+                </div>
+                <div className="col-number">
+                  <span className="task-number" style={{ background: '#f1f5f9', color: '#64748b', padding: '2px 8px', borderRadius: '6px', fontSize: '0.85em', fontWeight: 700 }}>#{task.number}</span>
+                </div>
+                <div className="col-name" style={{ flex: 1 }}>
+                  <span className={`task-name ${task.important ? 'important' : ''}`} style={{ fontWeight: 600 }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                      {task.notes ? (
+                        <a href={task.notes} target="_blank" rel="noreferrer" className="lecture-link" style={{ textDecoration: 'none', color: 'var(--text-main)' }}>
+                          {task.name}
+                          <ExternalLink size={14} style={{ opacity: 0.5 }} />
+                        </a>
+                      ) : (
+                        <span className="no-notes">
+                          {task.name}
+                        </span>
+                      )}
+                      {task.notionUrl && (
+                        <a href={task.notionUrl} target="_blank" rel="noreferrer" className="notion-link" title="Open Notion Notes">
+                          <NotionLogo size={15} />
+                        </a>
+                      )}
+                    </div>
+                  </span>
+                  <div className="task-meta-mobile">
+                    <span style={{ marginRight: '10px', opacity: 0.7 }}>{task.subjectName}</span>
+                    {task.date && (
+                      <span className="task-date">
+                        <Calendar size={12} /> {formatDate(task.date)}
                       </span>
                     )}
-                    {task.notionUrl && (
-                      <a href={task.notionUrl} target="_blank" rel="noreferrer" className="notion-link" title="Open Notion Notes">
-                        <NotionLogo size={15} />
-                      </a>
-                    )}
                   </div>
-                </span>
-                <div className="task-meta-mobile">
-                  <span style={{ marginRight: '10px', opacity: 0.7 }}>{task.subjectName}</span>
+                </div>
+                <div className="col-date">
                   {task.date && (
-                    <span className="task-date">
-                      <Calendar size={12} /> {formatDate(task.date)}
+                    <span className="task-date" style={{ fontWeight: 600, color: '#64748b' }}>
+                      {formatDate(task.date)}
                     </span>
                   )}
                 </div>
-              </div>
-              <div className="col-date">
-                {task.date && (
-                  <span className="task-date">
-                    <Calendar size={12} /> {formatDate(task.date)}
+                <label className="col-attendance">
+                  <input
+                    type="checkbox"
+                    checked={task.present !== false}
+                    onChange={e => onUpdate(task.id, { present: e.target.checked })}
+                    title="Mark Attendance"
+                  />
+                  <span className="attendance-label" style={{ fontWeight: 600, fontSize: '0.85em', color: task.present !== false ? '#15803d' : '#ef4444' }}>
+                    {task.present !== false ? 'Present' : 'Absent'}
                   </span>
-                )}
-              </div>
-              <label className="col-attendance">
-                <input
-                  type="checkbox"
-                  checked={task.present ?? true}
-                  onChange={e => onUpdate(task.id, { present: e.target.checked })}
-                  title="Mark Attendance"
-                />
-                <span className="attendance-label">
-                  {task.present !== false ? 'Present' : 'Absent'}
-                </span>
-              </label>
-              <label className="col-completion">
-                <input
-                  type="checkbox"
-                  checked={task.completed}
-                  onChange={e => onUpdate(task.id, { completed: e.target.checked })}
-                  title="Mark Lecture Completed"
-                />
-                <span className="completion-label">
-                  {task.completed ? 'Done' : 'Pending'}
-                </span>
-              </label>
-              <div className="col-actions">
-                <div className="task-actions">
-                  <button
-                    className={`star-btn ${task.important ? 'active' : ''}`}
-                    onClick={() => onUpdate(task.id, { important: !task.important })}
-                    title="Mark Important"
-                  >
-                    <Star size={18} fill={task.important ? "currentColor" : "none"} />
-                  </button>
-                  <button className="edit-btn" onClick={() => onEdit(task)} title="Edit">
-                    <Edit2 size={18} />
-                  </button>
-                  <button
-                    className="delete-btn"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onDelete(task.id);
-                    }}
-                    title="Delete"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                </label>
+                <label className="col-completion">
+                  <input
+                    type="checkbox"
+                    checked={task.completed === true}
+                    onChange={e => onUpdate(task.id, { completed: e.target.checked })}
+                    title="Mark Lecture Completed"
+                  />
+                  <span className="completion-label" style={{ fontWeight: 600, fontSize: '0.85em', color: task.completed ? '#1e40af' : '#64748b' }}>
+                    {task.completed ? 'Done' : 'Pending'}
+                  </span>
+                </label>
+                <div className="col-actions">
+                  <div className="task-actions">
+                    <button
+                      className={`star-btn ${task.important ? 'active' : ''}`}
+                      onClick={() => onUpdate(task.id, { important: !task.important })}
+                      title="Mark Important"
+                    >
+                      <Star size={18} fill={task.important ? "currentColor" : "none"} />
+                    </button>
+                    <button className="edit-btn" onClick={() => onEdit(task)} title="Edit">
+                      <Edit2 size={18} />
+                    </button>
+                    <button
+                      className="delete-btn"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onDelete(task.id);
+                      }}
+                      title="Delete"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </section>
     </div>
   );
 }
 
-function ExamCountdown() {
-  const [nextEvent, setNextEvent] = useState({ days: 0, label: '', type: 'exam' });
+function ExamCountdown({ now: externalNow }) {
+  const [internalTime, setInternalTime] = useState(new Date());
+  // Use external time if provided (for sync), otherwise internal time
+  const now = externalNow || internalTime;
+
+  const [nextEvent, setNextEvent] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, label: '', type: 'exam', expired: false });
+
+  // Internal timer only runs if no external time is provided
+  useEffect(() => {
+    if (externalNow) return;
+    const timer = setInterval(() => setInternalTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, [externalNow]);
 
   useEffect(() => {
     const calculateTime = () => {
-      const now = new Date();
+      // Use the unified 'now'
+      // Helper to create date at 9 AM local time
+      const getTargetAt9AM = (dateStr) => {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        return new Date(y, m - 1, d, 9, 0, 0);
+      };
 
       // Get next contest
       const upcomingContest = CONTEST_SCHEDULE
-        .map(c => ({ ...c, dateObj: new Date(c.date) }))
+        .map(c => ({ ...c, dateObj: getTargetAt9AM(c.date) }))
         .filter(c => c.dateObj > now)
         .sort((a, b) => a.dateObj - b.dateObj)[0];
 
-      const midDate = new Date(EXAM_DATES.midSem);
-      const endDate = new Date(EXAM_DATES.endSem);
+      const midDate = getTargetAt9AM(EXAM_DATES.midSem);
+      const endDate = getTargetAt9AM(EXAM_DATES.endSem);
 
       let targetDate;
       let label;
@@ -3636,21 +4149,39 @@ function ExamCountdown() {
       }
 
       const diff = targetDate - now;
-      const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-      return { days, label, type };
+
+      if (diff <= 0) {
+        return { days: 0, hours: 0, minutes: 0, seconds: 0, label, type, expired: true };
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / (1000 * 60)) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+
+      return { days, hours, minutes, seconds, label, type, expired: false };
     };
 
-    const timer = setInterval(() => setNextEvent(calculateTime()), 3600000);
     setNextEvent(calculateTime());
-    return () => clearInterval(timer);
-  }, []);
+  }, [now]); // Recalculate whenever 'now' changes
+
+  if (nextEvent.expired) return null;
 
   return (
     <div className={`exam-countdown glass ${nextEvent.type}`}>
-      {nextEvent.type === 'contest' ? <Zap size={16} className="text-warning" /> : <Clock size={16} className="text-secondary" />}
-      <span className="count-days">{nextEvent.days} Day{nextEvent.days !== 1 ? 's' : ''}</span>
-      <span className="count-label">until {nextEvent.label}</span>
-      {nextEvent.days <= 1 && <span className="urgent-badge">URGENT</span>}
+      <div className="countdown-icon-wrapper">
+        {nextEvent.type === 'contest' ? <Zap size={16} className="text-warning pulse-icon" /> : <Clock size={16} className="text-secondary" />}
+      </div>
+      <div className="countdown-content">
+        <div className="countdown-timer">
+          {nextEvent.days > 0 && <span className="time-unit"><strong>{nextEvent.days}</strong>d</span>}
+          <span className="time-unit"><strong>{String(nextEvent.hours).padStart(2, '0')}</strong>h</span>
+          <span className="time-unit"><strong>{String(nextEvent.minutes).padStart(2, '0')}</strong>m</span>
+          <span className="time-unit"><strong>{String(nextEvent.seconds).padStart(2, '0')}</strong>s</span>
+        </div>
+        <span className="count-label">until {nextEvent.label}</span>
+      </div>
+      {(nextEvent.days === 0 && nextEvent.hours < 12) && <span className="urgent-badge">URGENT</span>}
     </div>
   );
 }
