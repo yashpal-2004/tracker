@@ -49,7 +49,13 @@ import {
   Layers,
   Check,
   MessageSquare,
-  Link2
+  Link2,
+  Clock,
+  Zap,
+  ShieldCheck,
+  TrendingUp,
+  Activity,
+  Archive
 } from 'lucide-react';
 
 const DEFAULT_SUBJECTS = [
@@ -57,17 +63,57 @@ const DEFAULT_SUBJECTS = [
   "GenAI Class", "GenAI Lab", "SD Class", "SD Lab"
 ];
 
+const EXAM_DATES = {
+  midSem: "2026-03-15",
+  endSem: "2026-05-20"
+};
+
+const CONTEST_SCHEDULE = [
+  { name: "GenAI Contest 1", date: "2026-01-16" },
+  { name: "SD Contest 1", date: "2026-01-23" },
+  { name: "DVA Contest 1", date: "2026-01-30" },
+  { name: "SD Contest 2", date: "2026-02-13" },
+  { name: "DM Contest 1", date: "2026-02-27" },
+  { name: "DVA Contest 2", date: "2026-03-20" },
+  { name: "DM Contest 2", date: "2026-03-27" },
+  { name: "GenAI Contest 2", date: "2026-04-03" },
+  { name: "DVA Contest 3", date: "2026-04-10" },
+  { name: "SD Contest 3", date: "2026-05-01" },
+  { name: "DM Contest 3", date: "2026-05-08" },
+];
+
+const SUBJECT_THEMES = {
+  "DM Class": { primary: "#6366f1", glow: "rgba(99, 102, 241, 0.15)" },
+  "DM Lab": { primary: "#4f46e5", glow: "rgba(79, 70, 229, 0.15)" },
+  "DVA Class": { primary: "#f59e0b", glow: "rgba(245, 158, 11, 0.15)" },
+  "DVA Lab": { primary: "#d97706", glow: "rgba(217, 119, 6, 0.15)" },
+  "GenAI Class": { primary: "#8b5cf6", glow: "rgba(139, 92, 246, 0.15)" },
+  "GenAI Lab": { primary: "#7c3aed", glow: "rgba(124, 58, 237, 0.15)" },
+  "SD Class": { primary: "#10b981", glow: "rgba(16, 185, 129, 0.15)" },
+  "SD Lab": { primary: "#059669", glow: "rgba(5, 150, 105, 0.15)" },
+  "Analytics": { primary: "#1e293b", glow: "rgba(30, 41, 59, 0.15)" },
+  "All Lectures": { primary: "#0f172a", glow: "rgba(15, 23, 42, 0.15)" },
+  "Exam Schedule": { primary: "#f59e0b", glow: "rgba(245, 158, 11, 0.15)" }
+};
+
 function App() {
   const [tasks, setTasks] = useState([]);
   const [activeSubject, setActiveSubject] = useState(() => {
     const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Analytics' || hash === 'All Lectures') return hash;
+    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker') return hash;
     return localStorage.getItem('active_subject') || DEFAULT_SUBJECTS[0];
   });
 
   const [editingTask, setEditingTask] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState('Connecting...');
+  const [attendanceThreshold, setAttendanceThreshold] = useState(() => {
+    return parseInt(localStorage.getItem('attendance_threshold')) || 75;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('attendance_threshold', attendanceThreshold);
+  }, [attendanceThreshold]);
 
   // Sync with Firestore
   useEffect(() => {
@@ -111,11 +157,26 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Analytics' || hash === 'All Lectures') setActiveSubject(hash);
+      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker') setActiveSubject(hash);
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
+
+  // Theme Management
+  useEffect(() => {
+    const theme = SUBJECT_THEMES[activeSubject] || SUBJECT_THEMES["DM Class"];
+    document.documentElement.style.setProperty('--primary', theme.primary);
+    document.documentElement.style.setProperty('--primary-glow', theme.glow);
+
+    // Smooth background subtle shift
+    const bodyStyle = document.body.style;
+    if (activeSubject === 'Analytics') {
+      bodyStyle.backgroundColor = '#f8fafc';
+    } else {
+      bodyStyle.backgroundColor = '#f3f4f6';
+    }
+  }, [activeSubject]);
 
   const addTask = async (subjectName, type, data) => {
     const newTask = {
@@ -213,26 +274,36 @@ function App() {
         <BookmarkBar />
         <header className="main-header">
           <div className="title-group">
-            <h1>{activeSubject === 'Analytics' ? 'Overall Analytics' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject}</h1>
+            </div>
             <div className={`sync-badge ${syncStatus.toLowerCase().includes('error') ? 'error' : ''} ${syncStatus.toLowerCase().includes('up to date') ? 'online' : ''}`}>
               {syncStatus.toLowerCase().includes('connecting') ? <Loader2 size={14} className="spin" /> :
                 syncStatus.toLowerCase().includes('error') ? <AlertCircle size={14} /> :
                   syncStatus.toLowerCase().includes('offline') ? <CloudOff size={14} /> : <Cloud size={14} />}
               <span>{syncStatus}</span>
             </div>
-          </div>
-          <div className="stats">
-            {loading ? <Loader2 size={16} className="spin" /> : (
-              <>
-                <CheckCircle2 size={16} />
-                <span>{currentTasks.length} items</span>
-              </>
+            {(activeSubject === 'Marks Overview' || activeSubject === 'Detailed Analysis') && (
+              <div className="threshold-setting glass">
+                <span className="label">Criteria:</span>
+                <input
+                  type="number"
+                  value={attendanceThreshold}
+                  onChange={(e) => setAttendanceThreshold(Math.max(1, Math.min(100, parseInt(e.target.value) || 0)))}
+                  className="threshold-input"
+                />
+                <span className="unit">%</span>
+              </div>
             )}
           </div>
         </header>
 
-        {activeSubject === 'Analytics' ? (
-          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} />
+        {activeSubject === 'Marks Overview' ? (
+          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="overview" />
+        ) : activeSubject === 'Detailed Analysis' ? (
+          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="detailed" />
+        ) : activeSubject === 'Pending Work' ? (
+          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="pending" />
         ) : activeSubject === 'All Lectures' ? (
           <AllLecturesView
             tasks={tasks}
@@ -240,6 +311,12 @@ function App() {
             onDelete={deleteTask}
             onEdit={setEditingTask}
           />
+        ) : activeSubject === 'Activity Tracker' ? (
+          <ActivityView tasks={tasks} subjects={DEFAULT_SUBJECTS} />
+        ) : activeSubject === 'Exam Schedule' ? (
+          <ScheduleView tasks={tasks} />
+        ) : activeSubject === 'Safe Zone' ? (
+          <SafeZoneView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} />
         ) : (
           <div className="sections-container">
             <TaskSection
@@ -253,6 +330,7 @@ function App() {
               onUpdate={updateTask}
               onDelete={deleteTask}
               onEdit={setEditingTask}
+              threshold={attendanceThreshold}
             />
             <TaskSection
               title="Assignments"
@@ -344,21 +422,66 @@ function Sidebar({ subjects, activeSubject, onSelect }) {
         <h2>Subjects</h2>
       </div>
       <nav className="subject-list">
+        <div className="sidebar-divider">Performance</div>
         <button
-          className={`subject-btn summary-btn ${activeSubject === 'Analytics' ? 'active' : ''}`}
-          onClick={() => onSelect('Analytics')}
+          className={`subject-btn summary-btn ${activeSubject === 'Marks Overview' ? 'active' : ''}`}
+          onClick={() => onSelect('Marks Overview')}
+        >
+          <TrendingUp size={18} />
+          <span>Global Overview</span>
+          {activeSubject === 'Marks Overview' && <ChevronRight size={14} className="active-arrow" />}
+        </button>
+        <button
+          className={`subject-btn summary-btn ${activeSubject === 'Detailed Analysis' ? 'active' : ''}`}
+          onClick={() => onSelect('Detailed Analysis')}
         >
           <BarChart3 size={18} />
-          <span>Analytics Dashboard</span>
-          {activeSubject === 'Analytics' && <ChevronRight size={14} className="active-arrow" />}
+          <span>Detailed Analysis</span>
+          {activeSubject === 'Detailed Analysis' && <ChevronRight size={14} className="active-arrow" />}
         </button>
+
+        <div className="sidebar-divider">Monitoring</div>
+        <button
+          className={`subject-btn summary-btn ${activeSubject === 'Activity Tracker' ? 'active' : ''}`}
+          onClick={() => onSelect('Activity Tracker')}
+        >
+          <Activity size={18} />
+          <span>Personal Tracker</span>
+          {activeSubject === 'Activity Tracker' && <ChevronRight size={14} className="active-arrow" />}
+        </button>
+        <button
+          className={`subject-btn summary-btn ${activeSubject === 'Pending Work' ? 'active' : ''}`}
+          onClick={() => onSelect('Pending Work')}
+        >
+          <Clock size={18} />
+          <span>Pending Work</span>
+          {activeSubject === 'Pending Work' && <ChevronRight size={14} className="active-arrow" />}
+        </button>
+        <button
+          className={`subject-btn summary-btn ${activeSubject === 'Safe Zone' ? 'active' : ''}`}
+          onClick={() => onSelect('Safe Zone')}
+        >
+          <ShieldCheck size={18} />
+          <span>Skip Manager</span>
+          {activeSubject === 'Safe Zone' && <ChevronRight size={14} className="active-arrow" />}
+        </button>
+
+        <div className="sidebar-divider">Resources</div>
         <button
           className={`subject-btn summary-btn ${activeSubject === 'All Lectures' ? 'active' : ''}`}
           onClick={() => onSelect('All Lectures')}
         >
-          <Layers size={18} />
-          <span>All Lectures</span>
+          <Archive size={18} />
+          <span>Lecture Repo</span>
           {activeSubject === 'All Lectures' && <ChevronRight size={14} className="active-arrow" />}
+        </button>
+        <button
+          className={`subject-btn summary-btn ${activeSubject === 'Exam Schedule' ? 'active' : ''}`}
+          onClick={() => onSelect('Exam Schedule')}
+        >
+          <Calendar size={18} />
+          <span>Academic Cal</span>
+          {activeSubject === 'Exam Schedule' && <ChevronRight size={14} className="active-arrow" />}
         </button>
 
         <div className="sidebar-divider">Subjects</div>
@@ -411,12 +534,14 @@ function BookmarkBar() {
           <MessageSquare size={14} />
           <span>Notes Builder AI</span>
         </a>
+        <div className="bookmark-divider" style={{ margin: '0 16px' }}></div>
+        <ExamCountdown />
       </div>
     </div>
   );
 }
 
-function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, activeSubject, friendMeta, onUpdateFriendMeta }) {
+function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, activeSubject, friendMeta, onUpdateFriendMeta, threshold }) {
   const [val, setVal] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [link, setLink] = useState('');
@@ -460,9 +585,8 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     if (!val.trim()) return;
 
     const count = tasks.length + 1;
-    const data = { name: val, number: count };
+    const data = { name: val, number: count, date: date };
     if (type === 'lecture') {
-      data.date = date;
       data.notes = link;
       data.notionUrl = notionLink;
     }
@@ -478,6 +602,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
 
   return (
     <section className={`task-section ${type}-section glass`}>
+      {type === 'lecture' && <SafeZoneCalculator tasks={tasks} threshold={threshold} />}
       <div className="section-header">
         <div className="section-title-group">
           <h3>{title}</h3>
@@ -525,13 +650,11 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
           value={val}
           onChange={e => setVal(e.target.value)}
         />
-        {type === 'lecture' && (
-          <input
-            type="date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-          />
-        )}
+        <input
+          type="date"
+          value={date}
+          onChange={e => setDate(e.target.value)}
+        />
         <input
           placeholder={type === 'lecture' ? "Lecture/Notes Link (optional)" : "Link (optional)"}
           value={link}
@@ -561,10 +684,10 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
         <div className="task-list-header">
           <span className="col-number">No.</span>
           <span className="col-name">Name</span>
-          {type === 'lecture' && <span className="col-date">Date</span>}
+          <span className="col-date">Date</span>
           {type === 'lecture' && <span className="col-attendance">Attendance</span>}
-          <span className="col-completion">{type === 'lecture' ? 'Completed' : 'Status (You)'}</span>
-          {type !== 'lecture' && <span className="col-completion" style={{ color: '#f59e0b' }}>Status (D)</span>}
+          <span className="col-completion">{type === 'lecture' ? 'Completed' : (['assignment', 'quiz'].includes(type) ? 'Status' : 'Status (You)')}</span>
+          {type !== 'lecture' && !['assignment', 'quiz'].includes(type) && <span className="col-completion" style={{ color: '#f59e0b' }}>Status (D)</span>}
           <span className="col-actions">Actions</span>
         </div>
         {tasks.map(task => (
@@ -608,15 +731,9 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                 )}
               </div>
             </div>
-            {type === 'lecture' && (
-              <div className="col-date">
-                {task.date && (
-                  <span className="task-date">
-                    <Calendar size={12} /> {formatDate(task.date)}
-                  </span>
-                )}
-              </div>
-            )}
+            <div className="col-date">
+              <span className="task-date">{formatDate(task.date)}</span>
+            </div>
             {type === 'lecture' && (
               <label className="col-attendance">
                 <input
@@ -639,7 +756,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                 {task.completed && <Check size={14} color="#10b981" />}
               </div>
             </div>
-            {type !== 'lecture' && (
+            {type !== 'lecture' && !['assignment', 'quiz'].includes(type) && (
               <div className="col-completion">
                 <div
                   className={`checkbox-wrapper ${task.dhruvCompleted ? 'checked' : ''}`}
@@ -757,6 +874,7 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
   const [codingCorrect, setCodingCorrect] = useState('');
   const [codingTotal, setCodingTotal] = useState('');
   const [codingWeight, setCodingWeight] = useState('60');
+  const [contestDate, setContestDate] = useState(new Date().toISOString().split('T')[0]);
 
   // Written fields
   const [hasWritten, setHasWritten] = useState(false);
@@ -905,6 +1023,7 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
     const data = {
       name: contestName,
       number: count,
+      date: contestDate,
       hasQuiz,
       hasCoding,
       hasWritten,
@@ -972,12 +1091,18 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
 
       <form className="contest-input-form" onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
         {/* Contest Name */}
-        <div style={{ marginBottom: '15px' }}>
+        <div style={{ marginBottom: '15px', display: 'flex', gap: '15px' }}>
           <input
             placeholder="Contest name"
             value={contestName}
             onChange={e => setContestName(e.target.value)}
-            style={{ width: '100%', maxWidth: '400px' }}
+            style={{ flex: 1, maxWidth: '400px' }}
+          />
+          <input
+            type="date"
+            value={contestDate}
+            onChange={e => setContestDate(e.target.value)}
+            style={{ width: '160px' }}
           />
         </div>
 
@@ -1281,6 +1406,7 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
   const [dhruvWrittenCorrect, setDhruvWrittenCorrect] = useState('');
   const [writtenTotal, setWrittenTotal] = useState('');
   const [writtenWeight, setWrittenWeight] = useState('30');
+  const [examDate, setExamDate] = useState(new Date().toISOString().split('T')[0]);
 
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -1416,6 +1542,7 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
     const data = {
       name: examName,
       number: count,
+      date: examDate,
       hasQuiz,
       hasCoding,
       hasWritten,
@@ -1483,12 +1610,18 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
 
       <form className="contest-input-form" onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
         {/* Exam Name */}
-        <div style={{ marginBottom: '15px' }}>
+        <div style={{ marginBottom: '15px', display: 'flex', gap: '15px' }}>
           <input
             placeholder={`${title} name (e.g., ${type === 'midSem' ? 'Mid Term 2024' : 'Finals 2024'})`}
             value={examName}
             onChange={e => setExamName(e.target.value)}
-            style={{ width: '100%', maxWidth: '400px' }}
+            style={{ flex: 1, maxWidth: '400px' }}
+          />
+          <input
+            type="date"
+            value={examDate}
+            onChange={e => setExamDate(e.target.value)}
+            style={{ width: '160px' }}
           />
         </div>
 
@@ -1868,10 +2001,10 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
           <input value={name} onChange={e => setName(e.target.value)} />
           <label>Number</label>
           <input type="number" value={number} onChange={e => setNumber(e.target.value)} />
+          <label>Date</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
           {task.type === 'lecture' && (
             <>
-              <label>Date</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} />
               <label>Lecture Link / Notes URL</label>
               <input value={link} onChange={e => setLink(e.target.value)} />
               <label>Notion Notes URL</label>
@@ -2123,7 +2256,126 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
 
 
 
-function SummaryView({ tasks, subjects }) {
+const NotionLogo = ({ size = 16, className = "" }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className={className}
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.217-.793c.28 0 .047-.28.047-.326L20.103.872c0-.093-.42-.14-.56-.14l-14.731.98c-1.167.093-1.68.42-2.194 1.166l-1.587 2.145c0 .047-.14.187.093.187.14 0 .374 0 .56-.14l2.775-1.074.047.234v13.61c0 .56-.327.933-1.074 1.353l-1.353.7c-.187.093-.233.28-.047.373l6.994 3.123c.28.14.467.047.467-.186V8.97l6.621 11.236c.233.373.513.56.98.513l4.195-.187c.233 0 .42-.14.42-.42V4.954c0-.56.327-.933 1.073-1.353l1.354-.7c.186-.093.233-.28.046-.373l-6.994-3.123c-.28-.14-.466-.047-.466.186v11.7l-6.621-11.236c-.234-.373-.514-.56-.98-.513l-4.196.187c-.233 0-.42.14-.42.42v15.201l.047-.234-2.775 1.073z" />
+  </svg>
+);
+
+function ContestScheduleTable() {
+  const now = new Date();
+  return (
+    <div className="overall-card glass contest-schedule-card">
+      <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <Calendar size={20} style={{ color: '#f59e0b' }} />
+        Official Contest Schedule
+      </h3>
+      <table className="schedule-table">
+        <thead>
+          <tr>
+            <th>Event Name</th>
+            <th>Date</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {CONTEST_SCHEDULE.map((event, index) => {
+            const eventDate = new Date(event.date);
+            const isPast = eventDate < now;
+            const isNext = !isPast && (index === 0 || new Date(CONTEST_SCHEDULE[index - 1].date) < now);
+
+            return (
+              <tr key={index} className={`${isPast ? 'past' : ''} ${isNext ? 'next' : ''} ${!isPast && !isNext ? 'upcoming' : ''}`}>
+                <td>{event.name}</td>
+                <td>{formatDate(event.date)}</td>
+                <td>{isPast ? '✅ Completed' : isNext ? '🔥 Next Up' : '⏳ Upcoming'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ActivityHeatmap({ tasks }) {
+  const activityData = useMemo(() => {
+    const data = {};
+    const today = new Date();
+    // Last 90 days
+    for (let i = 0; i < 90; i++) {
+      const d = new Date();
+      d.setDate(today.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      data[dateStr] = 0;
+    }
+
+    tasks.forEach(task => {
+      // Only track completed items for work done metrics
+      if (['lecture', 'assignment', 'quiz'].includes(task.type) && !task.completed) return;
+
+      let dateStr = '';
+      try {
+        if (task.date) {
+          dateStr = task.date;
+        } else if (task.createdAt) {
+          const d = new Date(task.createdAt);
+          if (!isNaN(d.getTime())) {
+            dateStr = d.toISOString().split('T')[0];
+          }
+        }
+      } catch (e) {
+        console.error("Heatmap date error:", e);
+      }
+
+      if (dateStr && data[dateStr] !== undefined) {
+        data[dateStr] += 1;
+      }
+    });
+
+    return Object.entries(data).reverse();
+  }, [tasks]);
+
+  return (
+    <div className="heatmap-container glass">
+      <div className="heatmap-header">
+        <h4><Zap size={16} /> Activity Heatmap (Last 90 Days)</h4>
+        <div className="heatmap-legend">
+          <span>Less</span>
+          <div className="legend-box level-0"></div>
+          <div className="legend-box level-1"></div>
+          <div className="legend-box level-2"></div>
+          <div className="legend-box level-3"></div>
+          <span>More</span>
+        </div>
+      </div>
+      <div className="heatmap-grid">
+        {activityData.map(([date, count]) => {
+          let level = 0;
+          if (count > 0) level = 1;
+          if (count > 2) level = 2;
+          if (count > 4) level = 3;
+          return (
+            <div
+              key={date}
+              className={`heatmap-cell level-${level}`}
+              title={`${date}: ${count} activities`}
+            ></div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SummaryView({ tasks, subjects, threshold, mode = 'overview' }) {
   const getSubjectScore = (data, name, isDhruv = false) => {
     const { weights } = getSubjectWeights(name);
 
@@ -2271,11 +2523,66 @@ function SummaryView({ tasks, subjects }) {
       grandTotalLectures,
       grandTotalAttended,
       grandTotalCompleted,
+      grandTotalPending: grandTotalLectures - grandTotalCompleted,
       totalProjectedScore,
       totalDhruvScore,
       maxPossibleScore
     };
   }, [subjectGroups]);
+
+  const getCombinedSafeZone = (item, target = 75) => {
+    const pC = item.class.attendanceCount;
+    const tC = item.class.total;
+    const pL = item.lab.attendanceCount;
+    const tL = item.lab.total;
+    const targetW = target / 100;
+    const currentW = (item.class.attendancePercent * 0.6) + (item.lab.attendancePercent * 0.4);
+
+    if (tC === 0 || tL === 0) return null;
+
+    if (currentW >= target) {
+      // Skips
+      const targetC = (targetW - 0.4 * (pL / tL)) / 0.6;
+      const targetL = (targetW - 0.6 * (pC / tC)) / 0.4;
+
+      const skipC = targetC > 0 ? Math.floor((pC / targetC) - tC) : Infinity;
+      const skipL = targetL > 0 ? Math.floor((pL / targetL) - tL) : Infinity;
+
+      let msg = "";
+      if (skipC > 0 && skipL > 0) {
+        msg = `Safe! Skip ${skipC} Cls OR ${skipL} Lab`;
+      } else if (skipC > 0) {
+        msg = `Safe! Skip ${skipC} Cls (Lab at edge)`;
+      } else if (skipL > 0) {
+        msg = `Safe! Skip ${skipL} Lab (Cls at edge)`;
+      } else {
+        msg = "At the edge! Attend next of both.";
+      }
+      return { msg, status: skipC > 0 || skipL > 0 ? 'safe' : 'warning' };
+    } else {
+      // Needs
+      const targetC = (targetW - 0.4 * (pL / tL)) / 0.6;
+      const targetL = (targetW - 0.6 * (pC / tC)) / 0.4;
+      const needRatioC = 1 - targetC;
+      const needRatioL = 1 - targetL;
+
+      let msg = "";
+      if (targetC > 1 && targetL > 1) {
+        msg = "DANGER! Must attend BOTH Class & Lab";
+      } else if (targetC > 1) {
+        const needL = Math.ceil((targetL * tL - pL) / needRatioL);
+        msg = `DANGER! Attend next ${needL} Labs (Cls alone not enough)`;
+      } else if (targetL > 1) {
+        const needC = Math.ceil((targetC * tC - pC) / needRatioC);
+        msg = `DANGER! Attend next ${needC} Class (Lab alone not enough)`;
+      } else {
+        const needC = Math.ceil((targetC * tC - pC) / needRatioC);
+        const needL = Math.ceil((targetL * tL - pL) / needRatioL);
+        msg = `Attend next ${needC} Cls OR ${needL} Lab to reach ${target}%`;
+      }
+      return { msg, status: 'danger' };
+    }
+  };
 
   const format2 = (val) => Number(val).toFixed(2);
 
@@ -2319,310 +2626,824 @@ function SummaryView({ tasks, subjects }) {
 
   return (
     <div className="summary-container unified-summary">
-      <div className="overall-grid">
-        <div className="overall-card attendance-card glass shadow-lg">
-          <div className="overall-info">
-            <PieChart size={40} className="text-primary" />
-            <div>
-              <h2>{format2(summaryData.overallAttendance)}%</h2>
-              <p>Overall Attendance</p>
-            </div>
-          </div>
-          <div className="overall-stats-pill">
-            <span className="stats-label">Lectures Attended</span>
-            <span className="stats-value">{summaryData.grandTotalAttended}/{summaryData.grandTotalLectures}</span>
-          </div>
-        </div>
-
-        <div className="overall-card completion-card glass shadow-lg">
-          <div className="overall-info">
-            <CheckCircle2 size={40} className="text-success" />
-            <div>
-              <h2>{format2(summaryData.overallCompletion)}%</h2>
-              <p>Overall Completion</p>
-            </div>
-          </div>
-          <div className="overall-stats-pill">
-            <span className="stats-label">Lectures Done</span>
-            <span className="stats-value">{summaryData.grandTotalCompleted}/{summaryData.grandTotalLectures}</span>
-          </div>
-        </div>
-
-        <div className="overall-card score-card glass shadow-lg">
-          <div className="overall-info" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Award size={40} className="text-warning" />
-              <div style={{ display: 'flex', gap: '24px' }}>
-                <div>
-                  <h2 style={{ fontSize: '2.2rem' }}>{format2(summaryData.totalProjectedScore)}</h2>
-                  <p>Your Marks</p>
-                </div>
-                <div style={{ borderLeft: '2px solid rgba(245, 158, 11, 0.2)', paddingLeft: '24px' }}>
-                  <h2 style={{ fontSize: '2.2rem', color: '#f59e0b' }}>{format2(summaryData.totalDhruvScore)}</h2>
-                  <p>Dhruv's Marks</p>
-                </div>
+      {(mode === 'overview' || mode === 'detailed') && (
+        <div className="overall-grid">
+          <div className="overall-card attendance-card glass shadow-lg">
+            <div className="overall-info">
+              <PieChart size={40} className="text-primary" />
+              <div>
+                <h2>{format2(summaryData.overallAttendance)}%</h2>
+                <p>Overall Attendance</p>
               </div>
             </div>
+            <div className="overall-stats-pill">
+              <span className="stats-label">Lectures Attended</span>
+              <span className="stats-value">{summaryData.grandTotalAttended}/{summaryData.grandTotalLectures}</span>
+            </div>
+          </div>
 
-            <div className="leader-pill" style={{
-              background: summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#ecfdf5' : '#fffbeb',
-              color: summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#059669' : '#d97706',
-              padding: '8px 16px',
-              borderRadius: '100px',
-              fontSize: '0.85rem',
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              alignSelf: 'stretch',
-              justifyContent: 'center',
-              border: `1px solid ${summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#d1fae5' : '#fef3c7'}`
+          <div className="overall-card completion-card glass shadow-lg">
+            <div className="overall-info">
+              <CheckCircle2 size={40} className="text-success" />
+              <div>
+                <h2>{format2(summaryData.overallCompletion)}%</h2>
+                <p>Overall Completion</p>
+              </div>
+            </div>
+            <div className="overall-stats-pill">
+              <span className="stats-label">Lectures Done</span>
+              <span className="stats-value">{summaryData.grandTotalCompleted}/{summaryData.grandTotalLectures}</span>
+            </div>
+          </div>
+
+          <div className="overall-card glass shadow-lg" style={{ borderLeft: '4px solid #f43f5e' }}>
+            <div className="overall-info">
+              <div style={{ background: '#fff1f2', padding: '10px', borderRadius: '12px' }}>
+                <Clock size={32} style={{ color: '#f43f5e' }} />
+              </div>
+              <div>
+                <h2 style={{ color: '#f43f5e', fontSize: '2.2rem' }}>{summaryData.grandTotalPending}</h2>
+                <p style={{ fontWeight: 700, color: '#9f1239' }}>Left Lectures</p>
+              </div>
+            </div>
+            <div className="overall-stats-pill" style={{ background: 'rgba(244, 63, 94, 0.05)' }}>
+              <span className="stats-label" style={{ color: '#be123c' }}>Total Pending Tasks</span>
+              <span className="stats-value" style={{ color: '#f43f5e' }}>{summaryData.grandTotalPending} across all subjects</span>
+            </div>
+          </div>
+
+          <div className="overall-card score-card glass shadow-lg">
+            <div className="overall-info" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Award size={40} className="text-warning" />
+                <div style={{ display: 'flex', gap: '24px' }}>
+                  <div>
+                    <h2 style={{ fontSize: '2.2rem' }}>{format2(summaryData.totalProjectedScore)}</h2>
+                    <p>Your Marks</p>
+                  </div>
+                  <div style={{ borderLeft: '2px solid rgba(245, 158, 11, 0.2)', paddingLeft: '24px' }}>
+                    <h2 style={{ fontSize: '2.2rem', color: '#f59e0b' }}>{format2(summaryData.totalDhruvScore)}</h2>
+                    <p>Dhruv's Marks</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="leader-pill" style={{
+                background: summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#ecfdf5' : '#fffbeb',
+                color: summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#059669' : '#d97706',
+                padding: '8px 16px',
+                borderRadius: '1000px',
+                fontSize: '0.85rem',
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                alignSelf: 'stretch',
+                justifyContent: 'center',
+                border: `1px solid ${summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#d1fae5' : '#fef3c7'}`
+              }}>
+                <Trophy size={16} />
+                <span>
+                  {Math.abs(summaryData.totalProjectedScore - summaryData.totalDhruvScore) < 0.01
+                    ? "It's a Tie!"
+                    : summaryData.totalProjectedScore > summaryData.totalDhruvScore
+                      ? `You are ahead by ${format2(summaryData.totalProjectedScore - summaryData.totalDhruvScore)}`
+                      : `Dhruv is ahead by ${format2(summaryData.totalDhruvScore - summaryData.totalProjectedScore)}`
+                  }
+                </span>
+              </div>
+            </div>
+            <div className="overall-stats-pill">
+              <span className="stats-label">Max Possible: {summaryData.maxPossibleScore}</span>
+              <div style={{ display: 'flex', gap: '12px', fontSize: '0.9rem', fontWeight: 700 }}>
+                <span className="stats-value" style={{ fontSize: '1rem' }}>{summaryData.maxPossibleScore > 0 ? format2((summaryData.totalProjectedScore / summaryData.maxPossibleScore) * 100) : 0}%</span>
+                <span style={{ opacity: 0.3 }}>|</span>
+                <span className="stats-value" style={{ fontSize: '1rem', color: '#f59e0b' }}>{summaryData.maxPossibleScore > 0 ? format2((summaryData.totalDhruvScore / summaryData.maxPossibleScore) * 100) : 0}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mode === 'overview' && (
+        <div className="analytics-insights-grid" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))',
+          gap: '24px',
+          marginBottom: '48px',
+          marginTop: '24px'
+        }}>
+          <div className="overall-card glass shadow-md chart-container-card" style={{ padding: '24px', height: '420px', display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+              <BarChart3 size={20} style={{ color: '#6366f1' }} />
+              Subject-wise Marks Comparison
+            </h3>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ReBarChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <ReXAxis
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                    dy={10}
+                  />
+                  <ReYAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                  />
+                  <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '0.8rem', fontWeight: 700 }} />
+                  <ReBar dataKey="You" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={22} />
+                  <ReBar dataKey="Dhruv" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={22} />
+                </ReBarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="overall-card glass shadow-md chart-container-card" style={{ padding: '24px', height: '420px', display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
+              <Trophy size={20} style={{ color: '#10b981' }} />
+              Mark Advantage (+/-)
+            </h3>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <ReXAxis
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                    dy={10}
+                  />
+                  <ReYAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
+                  />
+                  <ReTooltip
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        const diff = payload[0].value;
+                        return (
+                          <div className="custom-tooltip glass" style={{
+                            padding: '12px',
+                            border: '1px solid #e2e8f0',
+                            background: 'rgba(255,255,255,0.95)',
+                            backdropFilter: 'blur(8px)',
+                            borderRadius: '12px'
+                          }}>
+                            <p style={{ fontWeight: 800, marginBottom: '4px' }}>{label}</p>
+                            <p style={{ color: diff >= 0 ? '#10b981' : '#ef4444', fontWeight: 700, fontSize: '0.9rem' }}>
+                              {diff >= 0 ? 'You Lead by: ' : 'Dhruv Leads by: '}
+                              {Math.abs(diff).toFixed(2)}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <ReBar dataKey="diff" name="Advantage">
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.diff >= 0 ? '#10b981' : '#ef4444'} opacity={0.6} />
+                    ))}
+                  </ReBar>
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mode === 'detailed' && (
+        <div className="subject-grid">
+          {summaryData.items.map(item => (
+            <div key={item.name} className="subject-card glass">
+              <div className="subject-card-header">
+                <div className="subj-title-group">
+                  <h3>{item.name}</h3>
+                  <span className="lecture-count-pill">{item.class.total + item.lab.total} Total Lectures</span>
+                </div>
+                <div className="header-badges">
+                  <div className={`leader-badge ${item.score >= item.dhruvScore ? 'me' : 'dhruv'}`} style={{
+                    padding: '4px 10px',
+                    borderRadius: '100px',
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    background: item.score >= item.dhruvScore ? '#f0fdf4' : '#fffbeb',
+                    color: item.score >= item.dhruvScore ? '#166534' : '#92400e',
+                    border: `1px solid ${item.score >= item.dhruvScore ? '#bbf7d0' : '#fde68a'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    <Star size={12} fill="currentColor" />
+                    <span>{Math.abs(item.score - item.dhruvScore) < 0.01 ? "Tie" : item.score > item.dhruvScore ? "You Lead" : "Dhruv Leads"}</span>
+                  </div>
+                  {item.studyGap > 0 && (
+                    <div className="gap-indicator danger" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '4px 10px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Clock size={12} />
+                      <span>{item.studyGap} Left ({item.classGap} Cls | {item.labGap} Lab)</span>
+                    </div>
+                  )}
+                  <div className="score-badge" style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}>
+                    <Award size={14} />
+                    <span style={{ color: '#92400e' }}>You: <strong>{format2(item.score)}</strong> | Dhruv: <strong style={{ color: '#d97706' }}>{format2(item.dhruvScore)}</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="dual-progress-section">
+                <div className="metric-column">
+                  <span className="metric-hdr">Attendance (60/40)</span>
+                  <div className="detail-row">
+                    <div className="detail-label">
+                      <span>Class</span>
+                      <span className="count-small">{item.class.attendanceCount}/{item.class.total} (U) | {item.class.dhruvAttendanceCount}/{item.class.total} (D)</span>
+                    </div>
+                    <div className="detail-bar-bg">
+                      <div className="detail-bar class-bar" style={{ width: `${item.class.attendancePercent}%`, opacity: 0.6 }}></div>
+                      <div className="detail-bar class-bar" style={{ width: `${item.class.dhruvAttendancePercent}%`, position: 'absolute', top: 0, height: '4px', background: '#f59e0b' }}></div>
+                    </div>
+                  </div>
+                  <div className="detail-row">
+                    <div className="detail-label">
+                      <span>Lab</span>
+                      <span className="count-small">{item.lab.attendanceCount}/{item.lab.total} (U) | {item.lab.dhruvAttendanceCount}/{item.lab.total} (D)</span>
+                    </div>
+                    <div className="detail-bar-bg">
+                      <div className="detail-bar lab-bar" style={{ width: `${item.lab.attendancePercent}%`, opacity: 0.6 }}></div>
+                      <div className="detail-bar lab-bar" style={{ width: `${item.lab.dhruvAttendancePercent}%`, position: 'absolute', top: 0, height: '4px', background: '#f59e0b' }}></div>
+                    </div>
+                  </div>
+                  <div className="total-badge att" style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                    <span>You: {format2(item.attWeighted)}%</span>
+                    <span>Dhruv: {format2(item.dhruvAttWeighted)}%</span>
+                  </div>
+                  {getCombinedSafeZone(item, threshold) && (
+                    <div className={`safe-zone-mini ${getCombinedSafeZone(item, threshold).status}`} style={{
+                      marginTop: '12px',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: getCombinedSafeZone(item, threshold).status === 'safe' ? '#f0fdf4' : getCombinedSafeZone(item, threshold).status === 'warning' ? '#fffbeb' : '#fef2f2',
+                      color: getCombinedSafeZone(item, threshold).status === 'safe' ? '#166534' : getCombinedSafeZone(item, threshold).status === 'warning' ? '#92400e' : '#991b1b',
+                      border: `1px solid ${getCombinedSafeZone(item, threshold).status === 'safe' ? '#bbf7d0' : getCombinedSafeZone(item, threshold).status === 'warning' ? '#fde68a' : '#fecaca'}`
+                    }}>
+                      <Zap size={14} />
+                      <span>{getCombinedSafeZone(item, threshold).msg}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="vertical-divider"></div>
+
+                <div className="metric-column">
+                  <span className="metric-hdr">Completion (50/50)</span>
+                  <div className="detail-row">
+                    <div className="detail-label">
+                      <span>Class</span>
+                      <span className="count-small">{item.class.completionCount}/{item.class.total}</span>
+                    </div>
+                    <div className="detail-bar-bg"><div className="detail-bar completion-bar" style={{ width: `${item.class.completionPercent}%` }}></div></div>
+                  </div>
+                  <div className="detail-row">
+                    <div className="detail-label">
+                      <span>Lab</span>
+                      <span className="count-small">{item.lab.completionCount}/{item.lab.total}</span>
+                    </div>
+                    <div className="detail-bar-bg"><div className="detail-bar completion-bar" style={{ width: `${item.lab.completionPercent}%` }}></div></div>
+                  </div>
+                  <div className="total-badge comp">Completed: {format2(item.compWeighted)}%</div>
+                </div>
+              </div>
+
+              <div className="score-breakdown-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+                {[
+                  { label: 'Attendance', key: 'attendance', color: '#8b5cf6', weightKey: 'attendance' },
+                  { label: 'Assignments', key: 'assignment', color: '#6366f1', weightKey: 'assignment' },
+                  { label: 'Projects', key: 'project', color: '#8b5cf6', weightKey: 'project' },
+                  { label: 'Contests', key: 'contest', color: '#10b981', weightKey: 'contest' },
+                  { label: 'Mid Sem', key: 'midSem', color: '#f59e0b', weightKey: 'midSem' },
+                  { label: 'End Sem', key: 'endSem', color: '#3b82f6', weightKey: 'endSem' }
+                ].map(comp => (
+                  (item.weights[comp.weightKey] > 0 || comp.key === 'attendance') && (
+                    <div key={comp.key} className="score-item">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span className="s-label">{comp.label}</span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8' }}>/{format2(item.weights[comp.weightKey] * 100)}</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700 }}>
+                          <span style={{ color: comp.color }}>{format2(item.breakdown[comp.key])}</span>
+                          <span style={{ color: '#f59e0b' }}>{format2(item.dhruvBreakdown[comp.key])}</span>
+                        </div>
+                        <div className="mini-score-bar" style={{ height: '8px', background: '#f1f5f9', position: 'relative' }}>
+                          <div className="fill" style={{
+                            width: `${(item.breakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`,
+                            backgroundColor: comp.color,
+                            height: '100%',
+                            opacity: 0.7
+                          }}></div>
+                          <div className="fill" style={{
+                            width: `${(item.dhruvBreakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`,
+                            backgroundColor: '#f59e0b',
+                            height: '3px',
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0
+                          }}></div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {mode === 'pending' && (
+        <div className="pending-work-repository glass shadow-lg" style={{ padding: '24px' }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', fontSize: '1.2rem', fontWeight: 800 }}>
+            <Clock size={20} style={{ color: '#f43f5e' }} />
+            Detailed Pending Lectures List
+          </h3>
+          <div className="pending-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+            {summaryData.items.filter(i => i.studyGap > 0).map(item => (
+              <div key={item.name} className="pending-subject-card glass" style={{ padding: '16px', borderLeft: '4px solid #f43f5e' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h4 style={{ color: 'var(--primary)', fontWeight: 800 }}>{item.name}</h4>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#f43f5e', background: '#fff1f2', padding: '2px 8px', borderRadius: '100px' }}>
+                    {item.studyGap} Left
+                  </span>
+                </div>
+                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {tasks.filter(t => t.subjectName === item.name && t.type === 'lecture' && !t.completed)
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .map(task => (
+                      <li key={task.id} style={{
+                        fontSize: '0.85rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        background: 'white',
+                        borderRadius: '8px',
+                        border: '1px solid #f1f5f9',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                      }}>
+                        <span style={{ fontWeight: 600 }}>{task.name}</span>
+                        <span style={{ opacity: 0.6, fontSize: '0.75rem', fontWeight: 700 }}>{formatDate(task.date)}</span>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          {summaryData.grandTotalPending === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#10b981' }}>
+              <Trophy size={48} style={{ marginBottom: '12px', opacity: 0.5 }} />
+              <p style={{ fontWeight: 800 }}>Amazing! You are all caught up on all lectures.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+function SafeZoneView({ tasks, subjects, threshold }) {
+  const subjectGroups = useMemo(() => {
+    const groups = {};
+    subjects.forEach(s => {
+      const baseName = s.replace(' Class', '').replace(' Lab', '');
+      if (!groups[baseName]) groups[baseName] = { class: {}, lab: {} };
+
+      const subjectTasks = tasks.filter(t => t.subjectName === s);
+      const lects = subjectTasks.filter(t => t.type === 'lecture');
+      const attCount = lects.filter(t => t.present !== false).length;
+
+      const stats = {
+        total: lects.length,
+        attendanceCount: attCount,
+        attendancePercent: lects.length > 0 ? (attCount / lects.length) * 100 : 0,
+      };
+
+      if (s.includes('Class')) groups[baseName].class = stats;
+      else groups[baseName].lab = stats;
+    });
+    return groups;
+  }, [tasks, subjects]);
+
+  const calculateSkips = (item, target) => {
+    const pC = item.class.attendanceCount;
+    const tC = item.class.total;
+    const pL = item.lab.attendanceCount;
+    const tL = item.lab.total;
+    const targetW = target / 100;
+
+    if (tC === 0 || tL === 0) return { status: 'no-data', msg: 'No lectures logged' };
+
+    const currentW = (item.class.attendancePercent * 0.6) + (item.lab.attendancePercent * 0.4);
+
+    if (currentW >= target) {
+      const targetC = (targetW - 0.4 * (pL / tL)) / 0.6;
+      const targetL = (targetW - 0.6 * (pC / tC)) / 0.4;
+
+      const skipC = targetC > 0 ? Math.floor((pC / targetC) - tC) : 0;
+      const skipL = targetL > 0 ? Math.floor((pL / targetL) - tL) : 0;
+
+      return {
+        status: 'safe',
+        skipC: Math.max(0, skipC),
+        skipL: Math.max(0, skipL)
+      };
+    } else {
+      const targetC = (targetW - 0.4 * (pL / tL)) / 0.6;
+      const targetL = (targetW - 0.6 * (pC / tC)) / 0.4;
+      const needRatioC = 1 - targetC;
+      const needRatioL = 1 - targetL;
+
+      const needC = targetC <= 1 ? Math.ceil((targetC * tC - pC) / needRatioC) : 'Max/Attended';
+      const needL = targetL <= 1 ? Math.ceil((targetL * tL - pL) / needRatioL) : 'Max/Attended';
+
+      return {
+        status: 'danger',
+        needC,
+        needL
+      };
+    }
+  };
+
+  return (
+    <div className="safe-zone-manager glass shadow-lg" style={{ padding: '32px' }}>
+      <header style={{ marginBottom: '32px' }}>
+        <h2 style={{ fontSize: '2rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <ShieldCheck size={32} style={{ color: '#10b981' }} />
+          Attendance Skip Manager
+        </h2>
+        <p style={{ color: 'var(--text-muted)', fontWeight: 600, marginTop: '8px' }}>
+          Target Threshold: <span style={{ color: 'var(--primary)', fontWeight: 800 }}>{threshold}%</span> (Weighted: 60% Class | 40% Lab)
+        </p>
+      </header>
+
+      <div className="safe-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px' }}>
+        {Object.entries(subjectGroups).map(([name, item]) => {
+          const zone = calculateSkips(item, threshold);
+          return (
+            <div key={name} className={`safe-card glass ${zone.status}`} style={{
+              padding: '24px',
+              borderRadius: '20px',
+              border: `1px solid ${zone.status === 'safe' ? '#bbf7d0' : zone.status === 'danger' ? '#fecaca' : '#e2e8f0'}`,
+              background: zone.status === 'safe' ? 'rgba(16, 185, 129, 0.02)' : zone.status === 'danger' ? 'rgba(239, 68, 68, 0.02)' : 'white'
             }}>
-              <Trophy size={16} />
-              <span>
-                {Math.abs(summaryData.totalProjectedScore - summaryData.totalDhruvScore) < 0.01
-                  ? "It's a Tie!"
-                  : summaryData.totalProjectedScore > summaryData.totalDhruvScore
-                    ? `You are ahead by ${format2(summaryData.totalProjectedScore - summaryData.totalDhruvScore)}`
-                    : `Dhruv is ahead by ${format2(summaryData.totalDhruvScore - summaryData.totalProjectedScore)}`
-                }
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '20px', color: 'var(--text-main)' }}>{name}</h3>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                  <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>Class (60%)</p>
+                  {zone.status === 'safe' ? (
+                    <div style={{ color: '#059669' }}>
+                      <span style={{ fontSize: '1.8rem', fontWeight: 900 }}>{zone.skipC}</span>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, marginLeft: '4px' }}>Skips left</span>
+                    </div>
+                  ) : (
+                    <div style={{ color: '#dc2626' }}>
+                      <span style={{ fontSize: typeof zone.needC === 'string' ? '1rem' : '1.8rem', fontWeight: 900 }}>{zone.needC}</span>
+                      {typeof zone.needC === 'number' && <span style={{ fontSize: '0.8rem', fontWeight: 700, marginLeft: '4px' }}>to attend</span>}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                  <p style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>Lab (40%)</p>
+                  {zone.status === 'safe' ? (
+                    <div style={{ color: '#059669' }}>
+                      <span style={{ fontSize: '1.8rem', fontWeight: 900 }}>{zone.skipL}</span>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, marginLeft: '4px' }}>Skips left</span>
+                    </div>
+                  ) : (
+                    <div style={{ color: '#dc2626' }}>
+                      <span style={{ fontSize: typeof zone.needL === 'string' ? '1rem' : '1.8rem', fontWeight: 900 }}>{zone.needL}</span>
+                      {typeof zone.needL === 'number' && <span style={{ fontSize: '0.8rem', fontWeight: 700, marginLeft: '4px' }}>to attend</span>}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ marginTop: '20px', padding: '12px', borderRadius: '10px', background: zone.status === 'safe' ? '#f0fdf4' : '#fef2f2', border: `1px solid ${zone.status === 'safe' ? '#d1fae5' : '#fee2e2'}`, fontSize: '0.85rem', fontWeight: 700, color: zone.status === 'safe' ? '#065f46' : '#991b1b', textAlign: 'center' }}>
+                Current Weighted: {((item.class.attendancePercent * 0.6) + (item.lab.attendancePercent * 0.4)).toFixed(2)}%
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ActivityView({ tasks, subjects }) {
+  const subjectActivity = useMemo(() => {
+    const stats = {};
+    subjects.forEach(s => stats[s] = {
+      count: 0,
+      lastStudied: null,
+      types: {
+        lecture: { count: 0, last: null },
+        assignment: { count: 0, last: null },
+        quiz: { count: 0, last: null },
+        project: { count: 0, last: null },
+        contest: { count: 0, last: null }
+      }
+    });
+
+    tasks.forEach(task => {
+      if (task.subjectName && stats[task.subjectName] !== undefined) {
+        // Filter: only count completed items for "Work Distribution"
+        if (['lecture', 'assignment', 'quiz'].includes(task.type) && !task.completed) return;
+
+        stats[task.subjectName].count++;
+
+        let taskDate = null;
+        if (task.date) taskDate = new Date(task.date);
+        else if (task.createdAt) taskDate = new Date(task.createdAt);
+
+        if (taskDate && !isNaN(taskDate.getTime())) {
+          // Global last studied
+          if (!stats[task.subjectName].lastStudied || taskDate > stats[task.subjectName].lastStudied) {
+            stats[task.subjectName].lastStudied = taskDate;
+          }
+
+          // Per-type last studied
+          if (task.type && stats[task.subjectName].types[task.type]) {
+            stats[task.subjectName].types[task.type].count++;
+            if (!stats[task.subjectName].types[task.type].last || taskDate > stats[task.subjectName].types[task.type].last) {
+              stats[task.subjectName].types[task.type].last = taskDate;
+            }
+          }
+        }
+      }
+    });
+
+    // Keep sidebar order
+    return subjects.map(s => [s, stats[s]]);
+  }, [tasks, subjects]);
+
+  return (
+    <div className="sections-container" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+      <ActivityHeatmap tasks={tasks} />
+
+      <div style={{ marginTop: '12px' }}>
+        <h3 style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Layers style={{ color: 'var(--primary)' }} />
+          Work Distribution by Subject
+        </h3>
+        <div className="activity-subjects-grid" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: '20px'
+        }}>
+          {subjectActivity.map(([name, data]) => (
+            <div key={name} className="subject-card glass" style={{
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              transition: 'transform 0.2s ease',
+              border: '1px solid rgba(0,0,0,0.05)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)' }}>{name}</h4>
+                  {data.lastStudied && (
+                    <p style={{ margin: '4px 0 0', fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Clock size={12} /> Last active: {data.lastStudied.toLocaleDateString('en-GB')}
+                    </p>
+                  )}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--primary)', lineHeight: 1 }}>{data.count}</div>
+                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Activities</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                {Object.entries(data.types).map(([type, stats]) => {
+                  if (stats.count === 0 && !['lecture', 'assignment', 'quiz'].includes(type)) return null;
+
+                  const Icon = type === 'lecture' ? BookOpen :
+                    type === 'assignment' ? FileText :
+                      type === 'quiz' ? CheckCircle2 :
+                        type === 'project' ? Rocket : Trophy;
+
+                  return (
+                    <div key={type} className="activity-mini-badge" style={{
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      gap: '2px',
+                      padding: '8px 12px',
+                      height: 'auto'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
+                        <Icon size={12} />
+                        <span style={{ fontSize: '0.65rem', textTransform: 'capitalize', opacity: 0.7 }}>{type}s</span>
+                        <span style={{ marginLeft: 'auto', fontWeight: 900, color: 'var(--primary)' }}>{stats.count}</span>
+                      </div>
+                      <div style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {stats.last ? `Last: ${stats.last.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}` : 'No activity'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleView({ tasks }) {
+  const now = new Date();
+
+  // Helper to find actual contest task from firestore tasks
+  const findActualContest = (scheduledName) => {
+    // scheduledName e.g. "GenAI Contest 1"
+    const parts = scheduledName.split(' ');
+    const subjectPrefix = parts[0]; // e.g., "GenAI"
+    const contestNum = parts[parts.length - 1]; // e.g., "1"
+
+    return tasks.find(t =>
+      t.type === 'contest' &&
+      t.subjectName.toLowerCase().includes(subjectPrefix.toLowerCase()) &&
+      (t.name == contestNum || t.number == contestNum || t.name.includes(`Contest ${contestNum}`))
+    );
+  };
+
+  const subjectDistribution = [
+    { name: "Discrete Mathematics", type: "Paper/System", contests: 3 },
+    { name: "GenAI", type: "System", contests: 2 },
+    { name: "System Design", type: "System", contests: 3 },
+    { name: "Data and Visual Analytics", type: "System", contests: 3 }
+  ];
+
+  return (
+    <div className="sections-container" style={{ gap: '32px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', width: '100%' }}>
+        <div className="task-section glass" style={{ padding: '24px' }}>
+          <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Trophy style={{ color: '#f59e0b' }} />
+            Course-wise Distribution (2024 Batch)
+          </h3>
+          <table className="schedule-table">
+            <thead>
+              <tr>
+                <th>Course Name</th>
+                <th>Exam Type</th>
+                <th style={{ textAlign: 'center' }}>Total Contests</th>
+              </tr>
+            </thead>
+            <tbody>
+              {subjectDistribution.map((row, i) => (
+                <tr key={i}>
+                  <td>{row.name}</td>
+                  <td>{row.type}</td>
+                  <td style={{ textAlign: 'center' }}>{row.contests}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="task-section glass" style={{ padding: '24px' }}>
+          <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Zap style={{ color: '#f59e0b' }} />
+            Quick Summary
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div className="overall-stats-pill" style={{ height: 'auto', padding: '16px', flexDirection: 'column', gap: '4px' }}>
+              <span className="stats-label">Total Events</span>
+              <span className="stats-value" style={{ fontSize: '1.5rem' }}>{CONTEST_SCHEDULE.length}</span>
+            </div>
+            <div className="overall-stats-pill" style={{ height: 'auto', padding: '16px', flexDirection: 'column', gap: '4px' }}>
+              <span className="stats-label">Remaining</span>
+              <span className="stats-value" style={{ fontSize: '1.5rem', color: '#f59e0b' }}>
+                {CONTEST_SCHEDULE.filter(c => new Date(c.date) >= now).length}
               </span>
             </div>
           </div>
-          <div className="overall-stats-pill">
-            <span className="stats-label">Max Possible: {summaryData.maxPossibleScore}</span>
-            <div style={{ display: 'flex', gap: '12px', fontSize: '0.9rem', fontWeight: 700 }}>
-              <span className="stats-value" style={{ fontSize: '1rem' }}>{summaryData.maxPossibleScore > 0 ? format2((summaryData.totalProjectedScore / summaryData.maxPossibleScore) * 100) : 0}%</span>
-              <span style={{ opacity: 0.3 }}>|</span>
-              <span className="stats-value" style={{ fontSize: '1rem', color: '#f59e0b' }}>{summaryData.maxPossibleScore > 0 ? format2((summaryData.totalDhruvScore / summaryData.maxPossibleScore) * 100) : 0}%</span>
-            </div>
+          <div style={{ marginTop: '24px', padding: '16px', background: 'rgba(99, 102, 241, 0.05)', borderRadius: '12px', border: '1px solid var(--primary-glow)' }}>
+            <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Clock size={16} /> Tip: Contests are usually on Fridays. Check the timeline for exact dates.
+            </p>
           </div>
         </div>
       </div>
 
-      <div className="analytics-insights-grid" style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))',
-        gap: '24px',
-        marginBottom: '48px',
-        marginTop: '24px'
-      }}>
-        <div className="overall-card glass shadow-md chart-container-card" style={{ padding: '24px', height: '420px', display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-            <BarChart3 size={20} style={{ color: '#6366f1' }} />
-            Subject-wise Marks Comparison
-          </h3>
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ReBarChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <ReXAxis
-                  dataKey="name"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
-                  dy={10}
-                />
-                <ReYAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
-                />
-                <ReTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} />
-                <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '0.8rem', fontWeight: 700 }} />
-                <ReBar dataKey="You" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={22} />
-                <ReBar dataKey="Dhruv" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={22} />
-              </ReBarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      <div className="task-section glass" style={{ padding: '24px', width: '100%' }}>
+        <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Calendar style={{ color: '#f59e0b' }} />
+          Chronological Timeline
+        </h3>
+        <div className="timeline-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+          {CONTEST_SCHEDULE.map((event, index) => {
+            const eventDate = new Date(event.date);
+            const isPast = eventDate < now;
+            const isNext = !isPast && (index === 0 || new Date(CONTEST_SCHEDULE[index - 1].date) < now);
+            const actualTask = findActualContest(event.name);
 
-        <div className="overall-card glass shadow-md chart-container-card" style={{ padding: '24px', height: '420px', display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px', color: '#1e293b' }}>
-            <Trophy size={20} style={{ color: '#10b981' }} />
-            Mark Advantage (+/-)
-          </h3>
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <ReXAxis
-                  dataKey="name"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
-                  dy={10}
-                />
-                <ReYAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }}
-                />
-                <ReTooltip
-                  content={({ active, payload, label }) => {
-                    if (active && payload && payload.length) {
-                      const diff = payload[0].value;
-                      return (
-                        <div className="custom-tooltip glass" style={{
-                          padding: '12px',
-                          border: '1px solid #e2e8f0',
-                          background: 'rgba(255,255,255,0.95)',
-                          backdropFilter: 'blur(8px)',
-                          borderRadius: '12px'
-                        }}>
-                          <p style={{ fontWeight: 800, marginBottom: '4px' }}>{label}</p>
-                          <p style={{ color: diff >= 0 ? '#10b981' : '#ef4444', fontWeight: 700, fontSize: '0.9rem' }}>
-                            {diff >= 0 ? 'You Lead by: ' : 'Dhruv Leads by: '}
-                            {Math.abs(diff).toFixed(2)}
-                          </p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <ReBar dataKey="diff" name="Advantage">
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.diff >= 0 ? '#10b981' : '#ef4444'} opacity={0.6} />
-                  ))}
-                </ReBar>
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
+            return (
+              <div key={index} className={`timeline-card glass ${isPast ? 'past' : ''} ${isNext ? 'active' : ''}`} style={{
+                padding: '16px',
+                borderRadius: '16px',
+                border: `1px solid ${isNext ? 'var(--primary)' : actualTask ? 'rgba(16, 185, 129, 0.3)' : 'rgba(0,0,0,0.05)'}`,
+                background: isNext ? 'var(--primary-glow)' : actualTask ? 'rgba(16, 185, 129, 0.02)' : 'white',
+                opacity: isPast && !actualTask ? 0.6 : 1,
+                position: 'relative',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                {isNext && <div style={{ position: 'absolute', top: 0, right: 0, background: 'var(--primary)', color: 'white', fontSize: '0.6rem', padding: '4px 10px', fontWeight: 900, borderRadius: '0 0 0 12px' }}>NEXT UP</div>}
+                {actualTask && <div style={{ position: 'absolute', top: 0, right: 0, background: '#10b981', color: 'white', fontSize: '0.6rem', padding: '4px 10px', fontWeight: 900, borderRadius: '0 0 0 12px' }}>DATA SYNCED</div>}
 
-      <div className="subject-grid">
-        {summaryData.items.map(item => (
-          <div key={item.name} className="subject-card glass">
-            <div className="subject-card-header">
-              <div className="subj-title-group">
-                <h3>{item.name}</h3>
-                <span className="lecture-count-pill">{item.class.total + item.lab.total} Total Lectures</span>
-              </div>
-              <div className="header-badges">
-                <div className={`leader-badge ${item.score >= item.dhruvScore ? 'me' : 'dhruv'}`} style={{
-                  padding: '4px 10px',
-                  borderRadius: '100px',
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  background: item.score >= item.dhruvScore ? '#f0fdf4' : '#fffbeb',
-                  color: item.score >= item.dhruvScore ? '#166534' : '#92400e',
-                  border: `1px solid ${item.score >= item.dhruvScore ? '#bbf7d0' : '#fde68a'}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}>
-                  <Star size={12} fill="currentColor" />
-                  <span>{Math.abs(item.score - item.dhruvScore) < 0.01 ? "Tie" : item.score > item.dhruvScore ? "You Lead" : "Dhruv Leads"}</span>
-                </div>
-                {item.studyGap > 0 && (
-                  <div className="gap-indicator warning">
-                    <AlertCircle size={12} />
-                    <span>{item.studyGap} Gap ({item.classGap}C/{item.labGap}L)</span>
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '4px' }}>WEEK {index + 1}</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 800, color: isNext ? 'var(--primary)' : 'var(--text-main)' }}>{event.name}</div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>
+                    <Calendar size={14} /> {formatDate(event.date)}
                   </div>
+                </div>
+
+                {actualTask ? (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '12px',
+                    background: 'white',
+                    borderRadius: '10px',
+                    border: '1px solid #f1f5f9',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                      <span style={{ fontWeight: 700 }}>You:</span>
+                      <span style={{ fontWeight: 800, color: '#10b981' }}>{actualTask.marks ?? 0} <small style={{ fontWeight: 600, color: '#94a3b8' }}>/ {actualTask.maxMarks || 5}</small></span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                      <span style={{ fontWeight: 700 }}>Dhruv:</span>
+                      <span style={{ fontWeight: 800, color: '#f59e0b' }}>{actualTask.dhruvMarks ?? 0} <small style={{ fontWeight: 600, color: '#94a3b8' }}>/ {actualTask.maxMarks || 5}</small></span>
+                    </div>
+                    <div style={{
+                      marginTop: '4px',
+                      height: '4px',
+                      background: '#f1f5f9',
+                      borderRadius: '2px',
+                      overflow: 'hidden',
+                      position: 'relative'
+                    }}>
+                      <div style={{
+                        width: `${((actualTask.marks || 0) / (actualTask.maxMarks || 5)) * 100}%`,
+                        background: '#10b981',
+                        height: '100%',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        opacity: 0.6
+                      }}></div>
+                      <div style={{
+                        width: `${((actualTask.dhruvMarks || 0) / (actualTask.maxMarks || 5)) * 100}%`,
+                        background: '#f59e0b',
+                        height: '2px',
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0
+                      }}></div>
+                    </div>
+                  </div>
+                ) : (
+                  isPast && (
+                    <div style={{ marginTop: '8px', fontSize: '0.75rem', fontWeight: 700, color: '#ef4444', fontStyle: 'italic' }}>
+                      Data not entered yet
+                    </div>
+                  )
                 )}
-                <div className="score-badge" style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}>
-                  <Award size={14} />
-                  <span style={{ color: '#92400e' }}>You: <strong>{format2(item.score)}</strong> | Dhruv: <strong style={{ color: '#d97706' }}>{format2(item.dhruvScore)}</strong></span>
-                </div>
               </div>
-            </div>
-
-            <div className="dual-progress-section">
-              <div className="metric-column">
-                <span className="metric-hdr">Attendance (60/40)</span>
-                <div className="detail-row">
-                  <div className="detail-label">
-                    <span>Class</span>
-                    <span className="count-small">{item.class.attendanceCount}/{item.class.total} (U) | {item.class.dhruvAttendanceCount}/{item.class.total} (D)</span>
-                  </div>
-                  <div className="detail-bar-bg">
-                    <div className="detail-bar class-bar" style={{ width: `${item.class.attendancePercent}%`, opacity: 0.6 }}></div>
-                    <div className="detail-bar class-bar" style={{ width: `${item.class.dhruvAttendancePercent}%`, position: 'absolute', top: 0, height: '4px', background: '#f59e0b' }}></div>
-                  </div>
-                </div>
-                <div className="detail-row">
-                  <div className="detail-label">
-                    <span>Lab</span>
-                    <span className="count-small">{item.lab.attendanceCount}/{item.lab.total} (U) | {item.lab.dhruvAttendanceCount}/{item.lab.total} (D)</span>
-                  </div>
-                  <div className="detail-bar-bg">
-                    <div className="detail-bar lab-bar" style={{ width: `${item.lab.attendancePercent}%`, opacity: 0.6 }}></div>
-                    <div className="detail-bar lab-bar" style={{ width: `${item.lab.dhruvAttendancePercent}%`, position: 'absolute', top: 0, height: '4px', background: '#f59e0b' }}></div>
-                  </div>
-                </div>
-                <div className="total-badge att" style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                  <span>You: {format2(item.attWeighted)}%</span>
-                  <span>Dhruv: {format2(item.dhruvAttWeighted)}%</span>
-                </div>
-              </div>
-
-              <div className="vertical-divider"></div>
-
-              <div className="metric-column">
-                <span className="metric-hdr">Completion (50/50)</span>
-                <div className="detail-row">
-                  <div className="detail-label">
-                    <span>Class</span>
-                    <span className="count-small">{item.class.completionCount}/{item.class.total}</span>
-                  </div>
-                  <div className="detail-bar-bg"><div className="detail-bar completion-bar" style={{ width: `${item.class.completionPercent}%` }}></div></div>
-                </div>
-                <div className="detail-row">
-                  <div className="detail-label">
-                    <span>Lab</span>
-                    <span className="count-small">{item.lab.completionCount}/{item.lab.total}</span>
-                  </div>
-                  <div className="detail-bar-bg"><div className="detail-bar completion-bar" style={{ width: `${item.lab.completionPercent}%` }}></div></div>
-                </div>
-                <div className="total-badge comp">Completed: {format2(item.compWeighted)}%</div>
-              </div>
-            </div>
-
-            <div className="score-breakdown-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
-              {[
-                { label: 'Attendance', key: 'attendance', color: '#8b5cf6', weightKey: 'attendance' },
-                { label: 'Assignments', key: 'assignment', color: '#6366f1', weightKey: 'assignment' },
-                { label: 'Projects', key: 'project', color: '#8b5cf6', weightKey: 'project' },
-                { label: 'Contests', key: 'contest', color: '#10b981', weightKey: 'contest' },
-                { label: 'Mid Sem', key: 'midSem', color: '#f59e0b', weightKey: 'midSem' },
-                { label: 'End Sem', key: 'endSem', color: '#3b82f6', weightKey: 'endSem' }
-              ].map(comp => (
-                (item.weights[comp.weightKey] > 0 || comp.key === 'attendance') && (
-                  <div key={comp.key} className="score-item">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <span className="s-label">{comp.label}</span>
-                      <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8' }}>/{format2(item.weights[comp.weightKey] * 100)}</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700 }}>
-                        <span style={{ color: comp.color }}>{format2(item.breakdown[comp.key])}</span>
-                        <span style={{ color: '#f59e0b' }}>{format2(item.dhruvBreakdown[comp.key])}</span>
-                      </div>
-                      <div className="mini-score-bar" style={{ height: '8px', background: '#f1f5f9', position: 'relative' }}>
-                        <div className="fill" style={{
-                          width: `${(item.breakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`,
-                          backgroundColor: comp.color,
-                          height: '100%',
-                          opacity: 0.7
-                        }}></div>
-                        <div className="fill" style={{
-                          width: `${(item.dhruvBreakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`,
-                          backgroundColor: '#f59e0b',
-                          height: '3px',
-                          position: 'absolute',
-                          bottom: 0,
-                          left: 0
-                        }}></div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              ))}
-            </div>
-          </div>
-        ))}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -2781,18 +3602,91 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
   );
 }
 
-const NotionLogo = ({ size = 16, className = "" }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    className={className}
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.217-.793c.28 0 .047-.28.047-.326L20.103.872c0-.093-.42-.14-.56-.14l-14.731.98c-1.167.093-1.68.42-2.194 1.166l-1.587 2.145c0 .047-.14.187.093.187.14 0 .374 0 .56-.14l2.775-1.074.047.234v13.61c0 .56-.327.933-1.074 1.353l-1.353.7c-.187.093-.233.28-.047.373l6.994 3.123c.28.14.467.047.467-.186V8.97l6.621 11.236c.233.373.513.56.98.513l4.195-.187c.233 0 .42-.14.42-.42V4.954c0-.56.327-.933 1.073-1.353l1.354-.7c.186-.093.233-.28.046-.373l-6.994-3.123c-.28-.14-.466-.047-.466.186v11.7l-6.621-11.236c-.234-.373-.514-.56-.98-.513l-4.196.187c-.233 0-.42.14-.42.42v15.201l.047-.234-2.775 1.073z" />
-  </svg>
-);
+function ExamCountdown() {
+  const [nextEvent, setNextEvent] = useState({ days: 0, label: '', type: 'exam' });
+
+  useEffect(() => {
+    const calculateTime = () => {
+      const now = new Date();
+
+      // Get next contest
+      const upcomingContest = CONTEST_SCHEDULE
+        .map(c => ({ ...c, dateObj: new Date(c.date) }))
+        .filter(c => c.dateObj > now)
+        .sort((a, b) => a.dateObj - b.dateObj)[0];
+
+      const midDate = new Date(EXAM_DATES.midSem);
+      const endDate = new Date(EXAM_DATES.endSem);
+
+      let targetDate;
+      let label;
+      let type = 'exam';
+
+      // Determine what's next
+      if (upcomingContest && upcomingContest.dateObj < midDate) {
+        targetDate = upcomingContest.dateObj;
+        label = upcomingContest.name;
+        type = 'contest';
+      } else if (now < midDate) {
+        targetDate = midDate;
+        label = 'Mid Sem';
+      } else {
+        targetDate = endDate;
+        label = 'End Sem';
+      }
+
+      const diff = targetDate - now;
+      const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+      return { days, label, type };
+    };
+
+    const timer = setInterval(() => setNextEvent(calculateTime()), 3600000);
+    setNextEvent(calculateTime());
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className={`exam-countdown glass ${nextEvent.type}`}>
+      {nextEvent.type === 'contest' ? <Zap size={16} className="text-warning" /> : <Clock size={16} className="text-secondary" />}
+      <span className="count-days">{nextEvent.days} Day{nextEvent.days !== 1 ? 's' : ''}</span>
+      <span className="count-label">until {nextEvent.label}</span>
+      {nextEvent.days <= 1 && <span className="urgent-badge">URGENT</span>}
+    </div>
+  );
+}
+
+function SafeZoneCalculator({ tasks, threshold = 75 }) {
+  const present = tasks.filter(t => t.present !== false).length;
+  const total = tasks.length;
+  const percentage = total > 0 ? (present / total) * 100 : 100;
+  const tRatio = threshold / 100;
+  const needRatio = 1 - tRatio;
+
+  let message = "";
+  let status = "safe";
+
+  if (percentage >= threshold) {
+    const skip = Math.floor((present / tRatio) - total);
+    if (skip > 0) {
+      message = `You can skip ${skip} next lecture${skip > 1 ? 's' : ''}`;
+      status = "safe";
+    } else {
+      message = "On the edge! Attend the next lecture.";
+      status = "warning";
+    }
+  } else {
+    const need = Math.ceil((tRatio * total - present) / needRatio);
+    message = `DANGER! Attend next ${need} lecture${need > 1 ? 's' : ''} to reach ${threshold}%`;
+    status = "danger";
+  }
+
+  return (
+    <div className={`safe-zone-widget ${status}`}>
+      <Zap size={14} />
+      <span>{message}</span>
+    </div>
+  );
+}
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
