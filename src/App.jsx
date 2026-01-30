@@ -13,6 +13,8 @@ import {
   Area
 } from 'recharts';
 import './App.css';
+import TimetableView from './TimetableView';
+import HomeDashboard from './HomeDashboard';
 import { db, TASKS_COLLECTION } from './firebase';
 import {
   addDoc,
@@ -56,7 +58,9 @@ import {
   TrendingUp,
   Activity,
   Archive,
-  Search
+  Search,
+  Table,
+  Home
 } from 'lucide-react';
 
 const DEFAULT_SUBJECTS = [
@@ -101,8 +105,8 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [activeSubject, setActiveSubject] = useState(() => {
     const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker') return hash;
-    return localStorage.getItem('active_subject') || DEFAULT_SUBJECTS[0];
+    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable') return hash;
+    return localStorage.getItem('active_subject') || 'Home';
   });
 
   const [editingTask, setEditingTask] = useState(null);
@@ -158,7 +162,7 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker') setActiveSubject(hash);
+      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable') setActiveSubject(hash);
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -174,14 +178,32 @@ function App() {
     const bodyStyle = document.body.style;
     if (activeSubject === 'Analytics') {
       bodyStyle.backgroundColor = '#f8fafc';
+    } else if (activeSubject === 'Home') {
+      bodyStyle.backgroundColor = '#ffffff';
     } else {
       bodyStyle.backgroundColor = '#f3f4f6';
     }
   }, [activeSubject]);
 
   const addTask = async (subjectName, type, data) => {
+    // Auto-detect subject for lectures based on timetable mapping
+    let finalSubject = subjectName;
+
+    if (type === 'lecture') {
+      // Dynamically import the mapping to check if this lecture should go to a different subject
+      try {
+        const { getSubjectFromLecture } = await import('./timetableMapping');
+        const detectedSubject = getSubjectFromLecture(data.name);
+        if (detectedSubject) {
+          finalSubject = detectedSubject;
+        }
+      } catch (err) {
+        console.warn('Could not load timetable mapping:', err);
+      }
+    }
+
     const newTask = {
-      subjectName,
+      subjectName: finalSubject,
       type,
       name: data.name,
       number: data.number,
@@ -196,7 +218,7 @@ function App() {
 
       // Delta Sync for Dhruv
       if (type === 'lecture' && newTask.present !== false) {
-        const fm = tasks.find(t => t.type === 'friend_meta' && t.subjectName === subjectName);
+        const fm = tasks.find(t => t.type === 'friend_meta' && t.subjectName === finalSubject);
         if (fm && fm.attendanceCount !== undefined) {
           await updateDoc(doc(db, 'tasks', fm.id), { attendanceCount: fm.attendanceCount + 1 });
         }
@@ -266,10 +288,19 @@ function App() {
     }
   };
 
+  const leadMsg = useMemo(() => {
+    const activeTasks = tasks.filter(t => t.type !== 'friend_meta');
+    const gradedTasks = activeTasks.filter(t => t.marks !== undefined || t.dhruvMarks !== undefined);
+    const myTotalMarks = gradedTasks.reduce((acc, t) => acc + (Number(t.marks) || 0), 0);
+    const dhruvTotalMarks = gradedTasks.reduce((acc, t) => acc + (Number(t.dhruvMarks) || 0), 0);
+    const diff = myTotalMarks - dhruvTotalMarks;
+
+    if (diff > 0) return `You are ahead by ${diff.toFixed(2)}`;
+    if (diff < 0) return `Dhruv is ahead by ${Math.abs(diff).toFixed(2)}`;
+    return `Scores are tied`;
+  }, [tasks]);
+
   const currentTasks = useMemo(() => {
-    if (activeSubject === 'Analytics' || activeSubject === 'All Lectures') {
-      return tasks.filter(t => t.type !== 'friend_meta');
-    }
     return tasks.filter(t => t.subjectName === activeSubject && t.type !== 'friend_meta');
   }, [tasks, activeSubject]);
 
@@ -279,20 +310,20 @@ function App() {
         subjects={DEFAULT_SUBJECTS}
         activeSubject={activeSubject}
         onSelect={setActiveSubject}
+        syncStatus={syncStatus}
       />
       <main className="main-content">
-        <BookmarkBar />
+        <BookmarkBar
+          activeSubject={activeSubject}
+          onSelect={setActiveSubject}
+          leadMsg={leadMsg}
+        />
         <header className="main-header">
           <div className="title-group">
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject}</h1>
+              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject === 'Timetable' ? 'Weekly Class Schedule' : activeSubject === 'Home' ? '' : activeSubject}</h1>
             </div>
-            <div className={`sync-badge ${syncStatus.toLowerCase().includes('error') ? 'error' : ''} ${syncStatus.toLowerCase().includes('up to date') ? 'online' : ''}`}>
-              {syncStatus.toLowerCase().includes('connecting') ? <Loader2 size={14} className="spin" /> :
-                syncStatus.toLowerCase().includes('error') ? <AlertCircle size={14} /> :
-                  syncStatus.toLowerCase().includes('offline') ? <CloudOff size={14} /> : <Cloud size={14} />}
-              <span>{syncStatus}</span>
-            </div>
+
             {(activeSubject === 'Marks Overview' || activeSubject === 'Detailed Analysis') && (
               <div className="threshold-setting glass">
                 <span className="label">Criteria:</span>
@@ -308,7 +339,9 @@ function App() {
           </div>
         </header>
 
-        {activeSubject === 'Marks Overview' ? (
+        {activeSubject === 'Home' ? (
+          <HomeDashboard tasks={tasks} />
+        ) : activeSubject === 'Marks Overview' ? (
           <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="overview" onUpdate={updateTask} />
         ) : activeSubject === 'Detailed Analysis' ? (
           <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="detailed" onUpdate={updateTask} />
@@ -325,6 +358,8 @@ function App() {
           <ActivityView tasks={tasks} subjects={DEFAULT_SUBJECTS} />
         ) : activeSubject === 'Exam Schedule' ? (
           <ScheduleView tasks={tasks} />
+        ) : activeSubject === 'Timetable' ? (
+          <TimetableView />
         ) : activeSubject === 'Safe Zone' ? (
           <SafeZoneView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} setThreshold={setAttendanceThreshold} />
         ) : (
@@ -424,76 +459,23 @@ function App() {
   );
 }
 
-function Sidebar({ subjects, activeSubject, onSelect }) {
+function Sidebar({ subjects, activeSubject, onSelect, syncStatus }) {
   return (
-    <aside className="sidebar glass">
+    <aside className="sidebar glass" style={{ position: 'relative' }}>
       <div className="sidebar-header">
-        <BookOpen size={24} />
-        <h2>Subjects</h2>
+        <BookOpen size={24} className="logo-icon" />
+        <h2 className="logo-text">Scholara</h2>
       </div>
       <nav className="subject-list">
-        <div className="sidebar-divider">Performance</div>
         <button
-          className={`subject-btn summary-btn ${activeSubject === 'Marks Overview' ? 'active' : ''}`}
-          onClick={() => onSelect('Marks Overview')}
+          className={`subject-btn ${activeSubject === 'Home' ? 'active' : ''}`}
+          onClick={() => onSelect('Home')}
+          style={{ marginBottom: '16px' }}
         >
-          <TrendingUp size={18} />
-          <span>Global Overview</span>
-          {activeSubject === 'Marks Overview' && <ChevronRight size={14} className="active-arrow" />}
+          <Home size={18} />
+          <span>Home</span>
+          {activeSubject === 'Home' && <ChevronRight size={14} className="active-arrow" />}
         </button>
-        <button
-          className={`subject-btn summary-btn ${activeSubject === 'Detailed Analysis' ? 'active' : ''}`}
-          onClick={() => onSelect('Detailed Analysis')}
-        >
-          <BarChart3 size={18} />
-          <span>Detailed Analysis</span>
-          {activeSubject === 'Detailed Analysis' && <ChevronRight size={14} className="active-arrow" />}
-        </button>
-
-        <div className="sidebar-divider">Monitoring</div>
-        <button
-          className={`subject-btn summary-btn ${activeSubject === 'Activity Tracker' ? 'active' : ''}`}
-          onClick={() => onSelect('Activity Tracker')}
-        >
-          <Activity size={18} />
-          <span>Personal Tracker</span>
-          {activeSubject === 'Activity Tracker' && <ChevronRight size={14} className="active-arrow" />}
-        </button>
-        <button
-          className={`subject-btn summary-btn ${activeSubject === 'Pending Work' ? 'active' : ''}`}
-          onClick={() => onSelect('Pending Work')}
-        >
-          <Clock size={18} />
-          <span>Pending Work</span>
-          {activeSubject === 'Pending Work' && <ChevronRight size={14} className="active-arrow" />}
-        </button>
-        <button
-          className={`subject-btn summary-btn ${activeSubject === 'Safe Zone' ? 'active' : ''}`}
-          onClick={() => onSelect('Safe Zone')}
-        >
-          <ShieldCheck size={18} />
-          <span>Skip Manager</span>
-          {activeSubject === 'Safe Zone' && <ChevronRight size={14} className="active-arrow" />}
-        </button>
-
-        <div className="sidebar-divider">Resources</div>
-        <button
-          className={`subject-btn summary-btn ${activeSubject === 'All Lectures' ? 'active' : ''}`}
-          onClick={() => onSelect('All Lectures')}
-        >
-          <Archive size={18} />
-          <span>Lecture Repo</span>
-          {activeSubject === 'All Lectures' && <ChevronRight size={14} className="active-arrow" />}
-        </button>
-        <button
-          className={`subject-btn summary-btn ${activeSubject === 'Exam Schedule' ? 'active' : ''}`}
-          onClick={() => onSelect('Exam Schedule')}
-        >
-          <Calendar size={18} />
-          <span>Academic Cal</span>
-          {activeSubject === 'Exam Schedule' && <ChevronRight size={14} className="active-arrow" />}
-        </button>
-
         <div className="sidebar-divider">Subjects</div>
         {subjects.map(subject => (
           <button
@@ -507,11 +489,26 @@ function Sidebar({ subjects, activeSubject, onSelect }) {
           </button>
         ))}
       </nav>
+
+      <div style={{ marginTop: 'auto', padding: '20px', display: 'flex', alignItems: 'center' }}>
+        <div
+          className={`sync-badge ${syncStatus?.toLowerCase().includes('error') ? 'error' : ''} ${syncStatus?.toLowerCase().includes('up to date') ? 'online' : ''}`}
+          style={{ border: 'none', background: 'transparent', padding: 0, minWidth: 'auto', boxShadow: 'none' }}
+          title={syncStatus}
+        >
+          {syncStatus?.toLowerCase().includes('connecting') ? <Loader2 size={18} className="spin" /> :
+            syncStatus?.toLowerCase().includes('error') ? <AlertCircle size={18} /> :
+              syncStatus?.toLowerCase().includes('offline') ? <CloudOff size={18} /> :
+                <Cloud size={18} style={{ color: syncStatus?.toLowerCase().includes('up to date') ? '#10b981' : '#64748b' }} />}
+        </div>
+      </div>
     </aside>
   );
 }
 
-function BookmarkBar() {
+
+
+function BookmarkBar({ activeSubject, onSelect, leadMsg }) {
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -521,50 +518,128 @@ function BookmarkBar() {
   }, []);
 
   return (
-    <div className="bookmark-bar glass">
-      <div className="bookmark-items">
-        <a
-          href="https://my.newtonschool.co/course/8adqgomb044s/details"
-          target="_blank"
-          rel="noreferrer"
-          className="bookmark-item"
-        >
-          <Rocket size={14} />
-          <span>Newton Portal</span>
-        </a>
-        <div className="bookmark-divider"></div>
-        <a
-          href="https://www.notion.so/Sem-4-2df73a32749f80518d92d53951340894"
-          target="_blank"
-          rel="noreferrer"
-          className="bookmark-item"
-        >
-          <FileText size={14} />
-          <span>Notion Sem 4</span>
-        </a>
-        <div className="bookmark-divider"></div>
-        <a
-          href="https://chatgpt.com/g/g-69784d86478081919281e702b0f97dea-academic-pdf-notes-builder"
-          target="_blank"
-          rel="noreferrer"
-          className="bookmark-item"
-        >
-          <MessageSquare size={14} />
-          <span>Notes Builder AI</span>
-        </a>
-        <div className="bookmark-divider" style={{ margin: '0 16px' }}></div>
-
-        <div className="bookmark-item" style={{ cursor: 'default', background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.8)' }}>
-          <Clock size={14} style={{ color: '#6366f1' }} />
-          <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', fontSize: '0.85rem', color: '#1e293b' }}>
-            {time.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}
-            <span style={{ margin: '0 6px', opacity: 0.3 }}>|</span>
-            {time.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </span>
+    <div className="bookmark-bar glass unified-bar">
+      <div className="bookmark-items" style={{ width: '100%', gap: '16px' }}>
+        {/* Quick External Links */}
+        <div className="nav-group">
+          <a
+            href="https://my.newtonschool.co/course/8adqgomb044s/details"
+            target="_blank"
+            rel="noreferrer"
+            className="bookmark-item"
+            title="Newton School Portal"
+          >
+            <Rocket size={14} />
+            <span>Newton</span>
+          </a>
+          <a
+            href="https://www.notion.so/Sem-4-2df73a32749f80518d92d53951340894"
+            target="_blank"
+            rel="noreferrer"
+            className="bookmark-item"
+            title="Notion Study Notes"
+          >
+            <FileText size={14} />
+            <span>Notion</span>
+          </a>
+          <a
+            href="https://chatgpt.com/g/g-69784d86478081919281e702b0f97dea-academic-pdf-notes-builder"
+            target="_blank"
+            rel="noreferrer"
+            className="bookmark-item"
+            title="AI Notes Builder"
+          >
+            <MessageSquare size={14} />
+            <span>Notes AI</span>
+          </a>
         </div>
 
-        <div className="bookmark-divider" style={{ margin: '0 16px' }}></div>
-        <ExamCountdown now={time} />
+        <div className="bookmark-divider"></div>
+
+        {/* Global Navigation */}
+        <div className="nav-group">
+          <button
+            className={`nav-btn ${activeSubject === 'Marks Overview' ? 'active' : ''}`}
+            onClick={() => onSelect('Marks Overview')}
+            title="Global Overview"
+          >
+            <TrendingUp size={16} />
+            <span>Overview</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Detailed Analysis' ? 'active' : ''}`}
+            onClick={() => onSelect('Detailed Analysis')}
+            title="Detailed Analysis"
+          >
+            <BarChart3 size={16} />
+            <span>Analysis</span>
+          </button>
+        </div>
+
+        <div className="nav-divider-vertical"></div>
+
+        <div className="nav-group">
+          <button
+            className={`nav-btn ${activeSubject === 'Activity Tracker' ? 'active' : ''}`}
+            onClick={() => onSelect('Activity Tracker')}
+            title="Personal Tracker"
+          >
+            <Activity size={16} />
+            <span>Tracker</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Pending Work' ? 'active' : ''}`}
+            onClick={() => onSelect('Pending Work')}
+            title="Pending Work"
+          >
+            <Clock size={16} />
+            <span>Pending</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Safe Zone' ? 'active' : ''}`}
+            onClick={() => onSelect('Safe Zone')}
+            title="Skip Manager"
+          >
+            <ShieldCheck size={16} />
+            <span>Skip</span>
+          </button>
+        </div>
+
+        <div className="nav-divider-vertical"></div>
+
+        <div className="nav-group">
+          <button
+            className={`nav-btn ${activeSubject === 'Timetable' ? 'active' : ''}`}
+            onClick={() => onSelect('Timetable')}
+            title="Weekly Timetable"
+          >
+            <Table size={16} />
+            <span>Timetable</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'All Lectures' ? 'active' : ''}`}
+            onClick={() => onSelect('All Lectures')}
+            title="Lecture Repo"
+          >
+            <Archive size={16} />
+            <span>Repo</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Exam Schedule' ? 'active' : ''}`}
+            onClick={() => onSelect('Exam Schedule')}
+            title="Academic Cal"
+          >
+            <Calendar size={16} />
+            <span>Calendar</span>
+          </button>
+        </div>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+          <ExamCountdown now={time} />
+          <div style={{ paddingRight: '4px', fontSize: '0.75rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
+            {leadMsg}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -577,6 +652,8 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
   const [notionLink, setNotionLink] = useState('');
   const [impQs, setImpQs] = useState('');
   const [isLoaded, setIsLoaded] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
 
   const presentCount = tasks.filter(t => t.present !== false).length;
   const completedCount = tasks.filter(t => t.completed).length;
@@ -609,6 +686,27 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     localStorage.setItem('inputDrafts', JSON.stringify(drafts));
   }, [val, link, notionLink, impQs, date, activeSubject, type, isLoaded]);
 
+  // Update suggestions when val changes (for lectures only)
+  useEffect(() => {
+    if (type === 'lecture' && val.trim().length >= 2) {
+      // Import dynamically to avoid circular dependencies
+      import('./timetableMapping').then(module => {
+        const matches = module.findMatchingLectures(val);
+        setSuggestions(matches);
+        setShowSuggestions(matches.length > 0);
+      });
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, [val, type]);
+
+  const handleSuggestionClick = (suggestion) => {
+    setVal(suggestion);
+    setShowSuggestions(false);
+    setSuggestions([]);
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!val.trim()) return;
@@ -627,6 +725,8 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     setLink('');
     setNotionLink('');
     setImpQs('');
+    setShowSuggestions(false);
+    setSuggestions([]);
   };
 
   return (
@@ -673,12 +773,36 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
           </div>
         </div>
       </div>
-      <form className="input-row" onSubmit={handleSubmit}>
-        <input
-          placeholder={`${title.slice(0, -1)} name`}
-          value={val}
-          onChange={e => setVal(e.target.value)}
-        />
+      <form className="input-row" onSubmit={handleSubmit} style={{ position: 'relative' }}>
+        <div style={{ position: 'relative', flex: 1 }}>
+          <input
+            placeholder={`${title.slice(0, -1)} name`}
+            value={val}
+            onChange={e => setVal(e.target.value)}
+            onFocus={() => {
+              if (type === 'lecture' && suggestions.length > 0) {
+                setShowSuggestions(true);
+              }
+            }}
+            onBlur={() => {
+              // Delay hiding to allow click on suggestion
+              setTimeout(() => setShowSuggestions(false), 200);
+            }}
+          />
+          {type === 'lecture' && showSuggestions && suggestions.length > 0 && (
+            <div className="autocomplete-dropdown">
+              {suggestions.map((suggestion, index) => (
+                <div
+                  key={index}
+                  className="autocomplete-item"
+                  onClick={() => handleSuggestionClick(suggestion)}
+                >
+                  {suggestion}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <input
           type="date"
           value={date}
@@ -1347,7 +1471,7 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
                     <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.quizCorrect / task.quizTotal) * 100)}%)</span>
                   </span>
                   <span style={{ opacity: 0.8, color: '#f59e0b' }}>
-                    D: {task.dhruvQuizCorrect ?? '-'}/{task.quizTotal}
+                    Dhruv: {task.dhruvQuizCorrect ?? '-'}/{task.quizTotal}
                     {task.dhruvQuizCorrect !== undefined && <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.dhruvQuizCorrect / task.quizTotal) * 100)}%)</span>}
                   </span>
                 </div>
@@ -1361,7 +1485,7 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
                     <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.codingCorrect / task.codingTotal) * 100)}%)</span>
                   </span>
                   <span style={{ opacity: 0.8, color: '#f59e0b' }}>
-                    D: {task.dhruvCodingCorrect ?? '-'}/{task.codingTotal}
+                    Dhruv: {task.dhruvCodingCorrect ?? '-'}/{task.codingTotal}
                     {task.dhruvCodingCorrect !== undefined && <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.dhruvCodingCorrect / task.codingTotal) * 100)}%)</span>}
                   </span>
                 </div>
@@ -1375,7 +1499,7 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
                     <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.writtenCorrect / task.writtenTotal) * 100)}%)</span>
                   </span>
                   <span style={{ opacity: 0.8, color: '#f59e0b' }}>
-                    D: {task.dhruvWrittenCorrect ?? '-'}/{task.writtenTotal}
+                    Dhruv: {task.dhruvWrittenCorrect ?? '-'}/{task.writtenTotal}
                     {task.dhruvWrittenCorrect !== undefined && <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.dhruvWrittenCorrect / task.writtenTotal) * 100)}%)</span>}
                   </span>
                 </div>
@@ -2080,7 +2204,7 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
                         />
                       </div>
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>X</span>
                         <input
                           type="number"
                           value={dhruvQuizCorrect}
@@ -2143,12 +2267,12 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
                         />
                       </div>
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>X</span>
                         <input
                           type="number"
                           value={dhruvCodingCorrect}
                           onChange={e => setDhruvCodingCorrect(e.target.value)}
-                          placeholder="D"
+                          placeholder="X"
                           min="0"
                           style={{ width: '100%', borderColor: '#fcd34d' }}
                         />
@@ -2206,12 +2330,12 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
                         />
                       </div>
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>X</span>
                         <input
                           type="number"
                           value={dhruvWrittenCorrect}
                           onChange={e => setDhruvWrittenCorrect(e.target.value)}
-                          placeholder="D"
+                          placeholder="X"
                           min="0"
                           style={{ width: '100%', borderColor: '#fcd34d' }}
                         />
@@ -2258,7 +2382,7 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
                   Your Marks: {calculateContestMarks().marks}/{calculateContestMarks().maxMarks}
                 </strong>
                 <strong style={{ color: '#f59e0b' }}>
-                  Dhruv: {calculateContestMarks().dhruvMarks}/{calculateContestMarks().maxMarks}
+                  X: {calculateContestMarks().dhruvMarks}/{calculateContestMarks().maxMarks}
                 </strong>
               </div>
               <div style={{ fontSize: '0.85em', opacity: 0.8, marginTop: '5px' }}>
@@ -4172,7 +4296,7 @@ function ExamCountdown({ now: externalNow }) {
       <div className="countdown-icon-wrapper">
         {nextEvent.type === 'contest' ? <Zap size={16} className="text-warning pulse-icon" /> : <Clock size={16} className="text-secondary" />}
       </div>
-      <div className="countdown-content">
+      <div className="countdown-content" style={{ borderRight: '1px solid rgba(0,0,0,0.06)', paddingRight: '16px', marginRight: '16px' }}>
         <div className="countdown-timer">
           {nextEvent.days > 0 && <span className="time-unit"><strong>{nextEvent.days}</strong>d</span>}
           <span className="time-unit"><strong>{String(nextEvent.hours).padStart(2, '0')}</strong>h</span>
@@ -4181,6 +4305,16 @@ function ExamCountdown({ now: externalNow }) {
         </div>
         <span className="count-label">until {nextEvent.label}</span>
       </div>
+
+      <div className="countdown-time-display" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+        <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#1e293b', fontVariantNumeric: 'tabular-nums' }}>
+          {now.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        </div>
+        <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#64748b' }}>
+          {now.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}
+        </div>
+      </div>
+
       {(nextEvent.days === 0 && nextEvent.hours < 12) && <span className="urgent-badge">URGENT</span>}
     </div>
   );
