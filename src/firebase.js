@@ -36,5 +36,6 @@ if (typeof window !== 'undefined') {
 }
 
 export const TASKS_COLLECTION = collection(db, 'tasks');
+export const HABITS_COLLECTION = collection(db, 'habits');
 export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 

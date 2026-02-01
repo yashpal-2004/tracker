@@ -15,6 +15,7 @@ import {
 import './App.css';
 import TimetableView from './TimetableView';
 import HomeDashboard from './HomeDashboard';
+import SmartHabitTracker from './SmartHabitTracker';
 import { db, TASKS_COLLECTION } from './firebase';
 import {
   addDoc,
@@ -105,7 +106,7 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [activeSubject, setActiveSubject] = useState(() => {
     const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable') return hash;
+    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits') return hash;
     return localStorage.getItem('active_subject') || 'Home';
   });
 
@@ -162,7 +163,7 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable') setActiveSubject(hash);
+      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits') setActiveSubject(hash);
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -321,7 +322,7 @@ function App() {
         <header className="main-header">
           <div className="title-group">
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject === 'Timetable' ? 'Weekly Class Schedule' : activeSubject === 'Home' ? '' : activeSubject}</h1>
+              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject === 'Timetable' ? 'Weekly Class Schedule' : activeSubject === 'Habits' ? 'Smart Habit Tracker' : activeSubject === 'Home' ? '' : activeSubject}</h1>
             </div>
 
             {(activeSubject === 'Marks Overview' || activeSubject === 'Detailed Analysis') && (
@@ -360,6 +361,8 @@ function App() {
           <ScheduleView tasks={tasks} />
         ) : activeSubject === 'Timetable' ? (
           <TimetableView />
+        ) : activeSubject === 'Habits' ? (
+          <SmartHabitTracker />
         ) : activeSubject === 'Safe Zone' ? (
           <SafeZoneView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} setThreshold={setAttendanceThreshold} />
         ) : (
@@ -475,6 +478,15 @@ function Sidebar({ subjects, activeSubject, onSelect, syncStatus }) {
           <Home size={18} />
           <span>Home</span>
           {activeSubject === 'Home' && <ChevronRight size={14} className="active-arrow" />}
+        </button>
+        <button
+          className={`subject-btn ${activeSubject === 'Habits' ? 'active' : ''}`}
+          onClick={() => onSelect('Habits')}
+          style={{ marginBottom: '16px' }}
+        >
+          <Zap size={18} />
+          <span>Habits</span>
+          {activeSubject === 'Habits' && <ChevronRight size={14} className="active-arrow" />}
         </button>
         <div className="sidebar-divider">Subjects</div>
         {subjects.map(subject => (
@@ -602,6 +614,14 @@ function BookmarkBar({ activeSubject, onSelect, leadMsg }) {
           >
             <ShieldCheck size={16} />
             <span>Skip</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Habits' ? 'active' : ''}`}
+            onClick={() => onSelect('Habits')}
+            title="Smart Habit Tracker"
+          >
+            <Zap size={16} />
+            <span>Habits</span>
           </button>
         </div>
 
