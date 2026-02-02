@@ -526,12 +526,120 @@ function Sidebar({ subjects, activeSubject, onSelect, syncStatus }) {
 
 
 function BookmarkBar({ activeSubject, onSelect, leadMsg, time }) {
-
-
   return (
-    <div className="bookmark-bar glass unified-bar two-rows">
-      <div className="bookmark-row">
-        <div className="nav-group">
+    <div className="bookmark-bar glass unified-bar structured-layout">
+      {/* Row 1: Internal Application Navigation */}
+      <div className="bookmark-row primary-nav-row">
+        <div className="nav-group section-performance">
+          <button
+            className={`nav-btn ${activeSubject === 'Marks Overview' ? 'active' : ''}`}
+            onClick={() => onSelect('Marks Overview')}
+            title="Global Overview"
+          >
+            <TrendingUp size={16} />
+            <span>Overview</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Detailed Analysis' ? 'active' : ''}`}
+            onClick={() => onSelect('Detailed Analysis')}
+            title="Detailed Analysis"
+          >
+            <BarChart3 size={16} />
+            <span>Analysis</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Activity Tracker' ? 'active' : ''}`}
+            onClick={() => onSelect('Activity Tracker')}
+            title="Personal Tracker"
+          >
+            <Activity size={16} />
+            <span>Tracker</span>
+          </button>
+        </div>
+
+        <div className="nav-divider-vertical"></div>
+
+        <div className="nav-group section-tasks">
+          <button
+            className={`nav-btn ${activeSubject === 'Pending Work' ? 'active' : ''}`}
+            onClick={() => onSelect('Pending Work')}
+            title="Pending Work"
+          >
+            <Clock size={16} />
+            <span>Pending</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Safe Zone' ? 'active' : ''}`}
+            onClick={() => onSelect('Safe Zone')}
+            title="Skip Manager"
+          >
+            <ShieldCheck size={16} />
+            <span>Skip</span>
+          </button>
+        </div>
+
+        <div className="nav-divider-vertical"></div>
+
+        <div className="nav-group section-wellness">
+          <button
+            className={`nav-btn ${activeSubject === 'Habits' ? 'active' : ''}`}
+            onClick={() => onSelect('Habits')}
+            title="Smart Habit Tracker"
+          >
+            <Zap size={16} />
+            <span>Habits</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Sleep' ? 'active' : ''}`}
+            onClick={() => onSelect('Sleep')}
+            title="Sleep Tracker"
+          >
+            <Moon size={16} />
+            <span>Sleep</span>
+          </button>
+        </div>
+
+        <div className="nav-divider-vertical"></div>
+
+        <div className="nav-group section-resources">
+          <button
+            className={`nav-btn ${activeSubject === 'Timetable' ? 'active' : ''}`}
+            onClick={() => onSelect('Timetable')}
+            title="Weekly Timetable"
+          >
+            <Table size={16} />
+            <span>Timetable</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'All Lectures' ? 'active' : ''}`}
+            onClick={() => onSelect('All Lectures')}
+            title="Lecture Repo"
+          >
+            <Archive size={16} />
+            <span>Repo</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Exam Schedule' ? 'active' : ''}`}
+            onClick={() => onSelect('Exam Schedule')}
+            title="Academic Cal"
+          >
+            <Calendar size={16} />
+            <span>Calendar</span>
+          </button>
+        </div>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+          <ExamCountdown now={time} />
+          <div style={{ paddingRight: '4px', fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
+            {leadMsg}
+          </div>
+        </div>
+      </div>
+
+      {/* Row 2: External Links & Status */}
+      <div className="bookmark-row secondary-nav-row" style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
+        <div className="nav-group external-links" style={{ width: '100%' }}>
+          <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8', marginRight: '4px' }}>QUICK LINKS:</span>
           <a
             href="https://my.newtonschool.co/course/8adqgomb044s/details"
             target="_blank"
@@ -562,108 +670,6 @@ function BookmarkBar({ activeSubject, onSelect, leadMsg, time }) {
             <MessageSquare size={14} />
             <span>Notes AI</span>
           </a>
-        </div>
-
-        <div className="nav-divider-vertical"></div>
-
-        <div className="nav-group">
-          <button
-            className={`nav-btn ${activeSubject === 'Marks Overview' ? 'active' : ''}`}
-            onClick={() => onSelect('Marks Overview')}
-            title="Global Overview"
-          >
-            <TrendingUp size={16} />
-            <span>Overview</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Detailed Analysis' ? 'active' : ''}`}
-            onClick={() => onSelect('Detailed Analysis')}
-            title="Detailed Analysis"
-          >
-            <BarChart3 size={16} />
-            <span>Analysis</span>
-          </button>
-        </div>
-
-        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-          <ExamCountdown now={time} />
-          <div style={{ paddingRight: '4px', fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
-            {leadMsg}
-          </div>
-        </div>
-      </div>
-
-      <div className="bookmark-row">
-        <div className="nav-group">
-          <button
-            className={`nav-btn ${activeSubject === 'Activity Tracker' ? 'active' : ''}`}
-            onClick={() => onSelect('Activity Tracker')}
-            title="Personal Tracker"
-          >
-            <Activity size={16} />
-            <span>Tracker</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Pending Work' ? 'active' : ''}`}
-            onClick={() => onSelect('Pending Work')}
-            title="Pending Work"
-          >
-            <Clock size={16} />
-            <span>Pending</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Safe Zone' ? 'active' : ''}`}
-            onClick={() => onSelect('Safe Zone')}
-            title="Skip Manager"
-          >
-            <ShieldCheck size={16} />
-            <span>Skip</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Habits' ? 'active' : ''}`}
-            onClick={() => onSelect('Habits')}
-            title="Smart Habit Tracker"
-          >
-            <Zap size={16} />
-            <span>Habits</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Sleep' ? 'active' : ''}`}
-            onClick={() => onSelect('Sleep')}
-            title="Sleep Tracker"
-          >
-            <Moon size={16} />
-            <span>Sleep</span>
-          </button>
-        </div>
-
-        <div className="nav-divider-vertical"></div>
-
-        <div className="nav-group">
-          <button
-            className={`nav-btn ${activeSubject === 'Timetable' ? 'active' : ''}`}
-            onClick={() => onSelect('Timetable')}
-            title="Weekly Timetable"
-          >
-            <Table size={16} />
-            <span>Timetable</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'All Lectures' ? 'active' : ''}`}
-            onClick={() => onSelect('All Lectures')}
-            title="Lecture Repo"
-          >
-            <Archive size={16} />
-            <span>Repo</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Exam Schedule' ? 'active' : ''}`}
-            onClick={() => onSelect('Exam Schedule')}
-            title="Academic Cal"
-          >
-            <Calendar size={16} />
-            <span>Calendar</span>
-          </button>
         </div>
       </div>
     </div>

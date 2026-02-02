@@ -109,6 +109,7 @@ const SmartHabitTracker = () => {
   const [collectiveDate, setCollectiveDate] = useState(new Date()); // For collective view navigation
   const [userStats, setUserStats] = useState({ xp: 0, badges: {}, completedDates: {}, dailyWorkLog: {} });
   const [rewardToast, setRewardToast] = useState(null);
+  const [sortBy, setSortBy] = useState('category'); // 'category' | 'priority' | 'name'
 
   // Hourly check for day change
   useEffect(() => {
@@ -660,6 +661,150 @@ const SmartHabitTracker = () => {
 
   const todayBadge = userStats.badges?.[currentDate];
 
+  const renderHabit = (habit) => {
+    const checkedToday = (habit.history || []).includes(currentDate);
+    return (
+      <div key={habit.id} className="habit-card" style={{ '--habit-color': habit.color, '--habit-glow': `${habit.color}20` }}>
+        <div className="habit-info-header">
+          <div className="habit-title-group" style={{ flex: 1 }}>
+            <span className="habit-category" style={{ background: `${habit.color}15`, color: habit.color }}>
+              {habit.category}
+            </span>
+            <h3 className="habit-name">{habit.name}</h3>
+            {habitXpMap[habit.id]?.monthTarget > 0 && (
+              <div className="monthly-target-info">
+                <div className="target-progress-row">
+                  <span className="target-val">
+                    {habitViewDates[habit.id]?.toLocaleString('default', { month: 'short' }) || new Date().toLocaleString('default', { month: 'short' })} Target: {habitXpMap[habit.id]?.monthTotal || 0} / {habitXpMap[habit.id]?.monthTarget} XP
+                  </span>
+                  <span className="target-pct">{Math.floor(((habitXpMap[habit.id]?.monthTotal || 0) / habitXpMap[habit.id]?.monthTarget) * 100)}%</span>
+                </div>
+                <div className="target-mini-bar">
+                  <div
+                    className="target-mini-fill"
+                    style={{
+                      width: `${Math.min(100, ((habitXpMap[habit.id]?.monthTotal || 0) / habitXpMap[habit.id]?.monthTarget) * 100)}%`,
+                      backgroundColor: habit.color
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="habit-actions">
+            <div className="habit-xp-group">
+              <div className="habit-xp-badge base" title="Base XP (10 per day)">
+                <Check size={10} />
+                <span>{habitXpMap[habit.id]?.base || 0}</span>
+              </div>
+              <div className="habit-xp-badge extra" title="Extra Effort XP">
+                <Flame size={10} />
+                <span>{habitXpMap[habit.id]?.extra || 0}</span>
+              </div>
+            </div>
+            {habit.allowExtraWork !== false && (
+              <button className="action-btn" onClick={() => {
+                setSelectedHabitForExtra(habit);
+                setShowExtraWorkModal(true);
+              }} title="Log Extra Effort">
+                <Zap size={16} style={{ color: habit.color }} />
+              </button>
+            )}
+            <button className="action-btn" onClick={() => {
+              const viewDate = habitViewDates[habit.id] || new Date();
+              setEditingTargetMonthInfo({
+                key: getMonthKey(viewDate),
+                label: viewDate.toLocaleString('default', { month: 'long', year: 'numeric' }),
+                date: viewDate
+              });
+
+              setFormData({
+                name: habit.name,
+                category: habit.category,
+                priority: habit.priority,
+                notes: habit.notes,
+                color: habit.color,
+                allowExtraWork: habit.allowExtraWork ?? true,
+                activeDays: habit.activeDays ?? [0, 1, 2, 3, 4, 5, 6],
+                manualTargets: habit.manualTargets || {}
+              });
+              setShowAddModal(true);
+            }}>
+              <Edit2 size={16} />
+            </button>
+            <button className="action-btn" onClick={() => deleteHabit(habit.id)}>
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="habit-main">
+          <div className="streak-badges">
+            <div className="streak-item">
+              <span className="streak-val">{habit.currentStreak || 0}</span>
+              <span className="streak-lbl">Current</span>
+            </div>
+            <div className="streak-item">
+              <span className="streak-val">{habit.longestStreak || 0}</span>
+              <span className="streak-lbl">Longest</span>
+            </div>
+          </div>
+          <div className="check-container">
+            {!(habit.activeDays || [0, 1, 2, 3, 4, 5, 6]).includes(new Date(currentDate).getDay()) ? (
+              <div className="rest-day-notice">
+                <span className="rest-lbl">REST DAY</span>
+                <CalendarIcon size={16} />
+              </div>
+            ) : (
+              <button
+                className={`habit-check-btn ${checkedToday ? 'checked' : ''}`}
+                onClick={() => toggleHabit(habit, checkedToday)}
+              >
+                <Check size={28} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {habit.notes && (
+          <div className="habit-notes" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', borderTop: '1px solid #f3f4f6', paddingTop: '12px', marginTop: '8px' }}>
+            <MessageSquare size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+            {habit.notes}
+          </div>
+        )}
+
+        <div className="habit-footer">
+          <div className="habit-priority">
+            <span className={`priority-dot ${PRIORITIES.find(p => p.label === habit.priority)?.class}`}></span>
+            <span>{habit.priority} Priority</span>
+          </div>
+          <div className="last-sync">
+            <Clock size={12} style={{ marginRight: '4px' }} />
+            {habit.lastCheckedDate ? `Last: ${habit.lastCheckedDate}` : 'No history yet'}
+          </div>
+        </div>
+
+        <HabitTrendChart history={habit.history || []} color={habit.color} habitId={habit.id} userStats={userStats} />
+
+        <HabitCalendar
+          history={habit.history || []}
+          reflections={habit.reflections || {}}
+          color={habit.color}
+          onToggleDate={(dateStr) => toggleDate(habit, dateStr)}
+          onAddReflection={(dateStr) => {
+            const text = (habit.reflections && habit.reflections[dateStr]) || '';
+            setActiveReflection({ habitId: habit.id, date: dateStr, text });
+          }}
+          userStats={userStats}
+          habitId={habit.id}
+          activeDays={habit.activeDays || [0, 1, 2, 3, 4, 5, 6]}
+          viewDate={habitViewDates[habit.id] || new Date()}
+          setViewDate={(d) => setHabitViewDates(prev => ({ ...prev, [habit.id]: d }))}
+        />
+      </div>
+    );
+  };
+
   if (loading) return <div className="loading-state"><Clock className="spin" /> Loading Habits...</div>;
 
   return (
@@ -670,9 +815,9 @@ const SmartHabitTracker = () => {
           <p style={{ color: 'var(--text-muted)' }}>Build consistent routines and track your progress.</p>
         </div>
         <div className="habit-controls">
-          <div className="xp-counter" title="Global lifetime points">
+          <div className="xp-counter" title={`${currentMonthStats.monthName} XP`}>
             <Zap size={16} fill="white" />
-            <span className="xp-val">{userStats.xp || 0} TOTAL XP</span>
+            <span className="xp-val">{currentMonthStats.totalEarned || 0} {currentMonthStats.monthName.split(' ')[0].toUpperCase()} XP</span>
           </div>
           <button
             className={`action-btn ${notificationsEnabled ? 'active' : ''}`}
@@ -680,6 +825,21 @@ const SmartHabitTracker = () => {
             title={notificationsEnabled ? "Disable Notifications" : "Enable Notifications"}
           >
             {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
+          </button>
+          <button
+            className="action-btn"
+            onClick={() => setSortBy(prev => {
+              if (prev === 'category') return 'priority';
+              if (prev === 'priority') return 'name';
+              return 'category';
+            })}
+            title={`Current Sort: ${sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}`}
+            style={{ minWidth: 'auto', gap: '6px', padding: '0 12px' }}
+          >
+            <MoreVertical size={16} />
+            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+              {sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}
+            </span>
           </button>
           <button
             className="add-habit-btn"
@@ -787,149 +947,40 @@ const SmartHabitTracker = () => {
       </div>
 
       <div className="habit-grid">
-        {habits.map(habit => {
-          const checkedToday = (habit.history || []).includes(currentDate);
-          return (
-            <div key={habit.id} className="habit-card" style={{ '--habit-color': habit.color, '--habit-glow': `${habit.color}20` }}>
-              <div className="habit-info-header">
-                <div className="habit-title-group" style={{ flex: 1 }}>
-                  <span className="habit-category" style={{ background: `${habit.color}15`, color: habit.color }}>
-                    {habit.category}
+        {sortBy === 'category' ? (
+          CATEGORIES.map(category => {
+            let categoryHabits = habits.filter(h => h.category === category);
+            if (categoryHabits.length === 0) return null;
+
+            return (
+              <div key={category} className="category-section" style={{ gridColumn: '1 / -1', marginBottom: '24px' }}>
+                <div className="category-header" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #f1f5f9' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1e293b', margin: 0 }}>{category}</h3>
+                  <span style={{ background: '#f1f5f9', color: '#64748b', fontSize: '0.75rem', fontWeight: 700, padding: '2px 8px', borderRadius: '6px' }}>
+                    {categoryHabits.length}
                   </span>
-                  <h3 className="habit-name">{habit.name}</h3>
-                  {habitXpMap[habit.id]?.monthTarget > 0 && (
-                    <div className="monthly-target-info">
-                      <div className="target-progress-row">
-                        <span className="target-val">
-                          {habitViewDates[habit.id]?.toLocaleString('default', { month: 'short' }) || new Date().toLocaleString('default', { month: 'short' })} Target: {habitXpMap[habit.id]?.monthTotal || 0} / {habitXpMap[habit.id]?.monthTarget} XP
-                        </span>
-                        <span className="target-pct">{Math.floor(((habitXpMap[habit.id]?.monthTotal || 0) / habitXpMap[habit.id]?.monthTarget) * 100)}%</span>
-                      </div>
-                      <div className="target-mini-bar">
-                        <div
-                          className="target-mini-fill"
-                          style={{
-                            width: `${Math.min(100, ((habitXpMap[habit.id]?.monthTotal || 0) / habitXpMap[habit.id]?.monthTarget) * 100)}%`,
-                            backgroundColor: habit.color
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
-                <div className="habit-actions">
-                  <div className="habit-xp-group">
-                    <div className="habit-xp-badge base" title="Base XP (10 per day)">
-                      <Check size={10} />
-                      <span>{habitXpMap[habit.id]?.base || 0}</span>
-                    </div>
-                    <div className="habit-xp-badge extra" title="Extra Effort XP">
-                      <Flame size={10} />
-                      <span>{habitXpMap[habit.id]?.extra || 0}</span>
-                    </div>
-                  </div>
-                  {habit.allowExtraWork !== false && (
-                    <button className="action-btn" onClick={() => {
-                      setSelectedHabitForExtra(habit);
-                      setShowExtraWorkModal(true);
-                    }} title="Log Extra Effort">
-                      <Zap size={16} style={{ color: habit.color }} />
-                    </button>
-                  )}
-                  <button className="action-btn" onClick={() => {
-                    const viewDate = habitViewDates[habit.id] || new Date();
-                    setEditingTargetMonthInfo({
-                      key: getMonthKey(viewDate),
-                      label: viewDate.toLocaleString('default', { month: 'long', year: 'numeric' }),
-                      date: viewDate
-                    });
-
-                    setFormData({
-                      name: habit.name,
-                      category: habit.category,
-                      priority: habit.priority,
-                      notes: habit.notes,
-                      color: habit.color,
-                      allowExtraWork: habit.allowExtraWork ?? true,
-                      activeDays: habit.activeDays ?? [0, 1, 2, 3, 4, 5, 6],
-                      manualTargets: habit.manualTargets || {}
-                    });
-                    setShowAddModal(true);
-                  }}>
-                    <Edit2 size={16} />
-                  </button>
-                  <button className="action-btn" onClick={() => deleteHabit(habit.id)}>
-                    <Trash2 size={16} />
-                  </button>
+                <div className="habit-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '24px' }}>
+                  {categoryHabits.map(habit => renderHabit(habit))}
                 </div>
               </div>
-
-              <div className="habit-main">
-                <div className="streak-badges">
-                  <div className="streak-item">
-                    <span className="streak-val">{habit.currentStreak || 0}</span>
-                    <span className="streak-lbl">Current</span>
-                  </div>
-                  <div className="streak-item">
-                    <span className="streak-val">{habit.longestStreak || 0}</span>
-                    <span className="streak-lbl">Longest</span>
-                  </div>
-                </div>
-                <div className="check-container">
-                  {!(habit.activeDays || [0, 1, 2, 3, 4, 5, 6]).includes(new Date(currentDate).getDay()) ? (
-                    <div className="rest-day-notice">
-                      <span className="rest-lbl">REST DAY</span>
-                      <CalendarIcon size={16} />
-                    </div>
-                  ) : (
-                    <button
-                      className={`habit-check-btn ${checkedToday ? 'checked' : ''}`}
-                      onClick={() => toggleHabit(habit, checkedToday)}
-                    >
-                      <Check size={28} />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {habit.notes && (
-                <div className="habit-notes" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', borderTop: '1px solid #f3f4f6', paddingTop: '12px', marginTop: '8px' }}>
-                  <MessageSquare size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-                  {habit.notes}
-                </div>
-              )}
-
-              <div className="habit-footer">
-                <div className="habit-priority">
-                  <span className={`priority-dot ${PRIORITIES.find(p => p.label === habit.priority)?.class}`}></span>
-                  <span>{habit.priority} Priority</span>
-                </div>
-                <div className="last-sync">
-                  <Clock size={12} style={{ marginRight: '4px' }} />
-                  {habit.lastCheckedDate ? `Last: ${habit.lastCheckedDate}` : 'No history yet'}
-                </div>
-              </div>
-
-              <HabitTrendChart history={habit.history || []} color={habit.color} habitId={habit.id} userStats={userStats} />
-
-              <HabitCalendar
-                history={habit.history || []}
-                reflections={habit.reflections || {}}
-                color={habit.color}
-                onToggleDate={(dateStr) => toggleDate(habit, dateStr)}
-                onAddReflection={(dateStr) => {
-                  const text = (habit.reflections && habit.reflections[dateStr]) || '';
-                  setActiveReflection({ habitId: habit.id, date: dateStr, text });
-                }}
-                userStats={userStats}
-                habitId={habit.id}
-                activeDays={habit.activeDays || [0, 1, 2, 3, 4, 5, 6]}
-                viewDate={habitViewDates[habit.id] || new Date()}
-                setViewDate={(d) => setHabitViewDates(prev => ({ ...prev, [habit.id]: d }))}
-              />
-            </div>
-          );
-        })}
+            );
+          })
+        ) : (
+          <div className="habit-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '24px', gridColumn: '1 / -1' }}>
+            {[...habits]
+              .sort((a, b) => {
+                if (sortBy === 'priority') {
+                  const pMap = { 'High': 3, 'Medium': 2, 'Low': 1 };
+                  return (pMap[b.priority] || 0) - (pMap[a.priority] || 0);
+                } else {
+                  return a.name.localeCompare(b.name);
+                }
+              })
+              .map(habit => renderHabit(habit))
+            }
+          </div>
+        )}
 
         {habits.length === 0 && (
           <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
@@ -942,7 +993,6 @@ const SmartHabitTracker = () => {
           </div>
         )}
       </div>
-
 
       <HabitAnalytics habits={habits} userStats={userStats} />
 
