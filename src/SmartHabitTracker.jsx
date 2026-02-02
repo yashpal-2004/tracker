@@ -57,6 +57,8 @@ const PRIORITIES = [
   { label: 'High', color: '#ef4444', class: 'priority-high' }
 ];
 
+const getMonthKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
 const getDefaultMonthlyTarget = (allowExtra, activeDays = [0, 1, 2, 3, 4, 5, 6], targetDate = new Date()) => {
   const year = targetDate.getFullYear();
   const month = targetDate.getMonth();
@@ -91,8 +93,11 @@ const SmartHabitTracker = () => {
     color: '#4f46e5',
     monthlyTarget: getDefaultMonthlyTarget(true),
     allowExtraWork: true,
-    activeDays: [0, 1, 2, 3, 4, 5, 6]
+    activeDays: [0, 1, 2, 3, 4, 5, 6],
+    manualTargets: {} // Map of 'YYYY-MM' -> targetValue
   });
+
+  const [editingTargetMonthInfo, setEditingTargetMonthInfo] = useState({ key: '', label: '', date: new Date() });
 
   const [habitViewDates, setHabitViewDates] = useState({});
   const [activeReflection, setActiveReflection] = useState(null); // { habitId, date, text }
@@ -101,6 +106,7 @@ const SmartHabitTracker = () => {
   const [editingExtraWork, setEditingExtraWork] = useState(null); // { date, index, entry }
   const [extraWorkData, setExtraWorkData] = useState({ description: '', duration: '1h', targetDate: '', logDate: new Date().toLocaleDateString('en-CA') });
   const [currentDate, setCurrentDate] = useState(new Date().toLocaleDateString('en-CA'));
+  const [collectiveDate, setCollectiveDate] = useState(new Date()); // For collective view navigation
   const [userStats, setUserStats] = useState({ xp: 0, badges: {}, completedDates: {}, dailyWorkLog: {} });
   const [rewardToast, setRewardToast] = useState(null);
 
@@ -342,7 +348,8 @@ const SmartHabitTracker = () => {
         color: '#4f46e5',
         monthlyTarget: getDefaultMonthlyTarget(true),
         allowExtraWork: true,
-        activeDays: [0, 1, 2, 3, 4, 5, 6]
+        activeDays: [0, 1, 2, 3, 4, 5, 6],
+        manualTargets: {}
       });
     } catch (err) {
       console.error("Error adding habit:", err);
@@ -575,8 +582,12 @@ const SmartHabitTracker = () => {
       const history = h.history || [];
       const monthHistory = history.filter(d => d.startsWith(monthPrefix));
 
-      // Always calculate based on the month being viewed
-      const thisMonthTarget = getDefaultMonthlyTarget(h.allowExtraWork ?? true, h.activeDays ?? [0, 1, 2, 3, 4, 5, 6], viewDate);
+      // Calculate target: Use manual if set for THIS SPECIFIC MONTH, otherwise dynamic
+      const monthKey = getMonthKey(viewDate);
+      const manualTarget = h.manualTargets?.[monthKey];
+      const thisMonthTarget = manualTarget !== undefined
+        ? manualTarget
+        : getDefaultMonthlyTarget(h.allowExtraWork ?? true, h.activeDays ?? [0, 1, 2, 3, 4, 5, 6], viewDate);
 
       map[h.id] = {
         base: history.length * 10,
@@ -602,6 +613,50 @@ const SmartHabitTracker = () => {
     });
     return map;
   }, [habits, userStats.extraWorkLog, currentDate, habitViewDates]);
+
+  const currentMonthStats = useMemo(() => {
+    const d = collectiveDate;
+    const monthKey = getMonthKey(d);
+    const monthPrefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const monthName = d.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+    let totalTarget = 0;
+    let totalBaseXP = 0;
+
+    habits.forEach(h => {
+      // Target for selected month
+      const t = h.manualTargets?.[monthKey] !== undefined
+        ? h.manualTargets[monthKey]
+        : getDefaultMonthlyTarget(h.allowExtraWork ?? true, h.activeDays ?? [0, 1, 2, 3, 4, 5, 6], d);
+      totalTarget += t;
+
+      // Base XP earned in selected month
+      const history = h.history || [];
+      const monthHistory = history.filter(dateStr => dateStr.startsWith(monthPrefix));
+      totalBaseXP += monthHistory.length * 10;
+    });
+
+    let totalExtraXP = 0;
+    let extraWorkCount = 0;
+    Object.entries(userStats.extraWorkLog || {}).forEach(([date, entries]) => {
+      if (date.startsWith(monthPrefix)) {
+        entries.forEach(e => {
+          totalExtraXP += (e.xpAwarded || 0);
+          extraWorkCount++;
+        });
+      }
+    });
+
+    const totalEarned = totalBaseXP + totalExtraXP;
+    return { totalTarget, totalEarned, monthName, extraWorkCount, totalExtraXP };
+  }, [habits, userStats.extraWorkLog, collectiveDate]);
+
+  const todayStats = useMemo(() => {
+    const completedCount = habits.filter(h => (h.history || []).includes(currentDate)).length;
+    const baseXP = completedCount * 10;
+    const extraXP = (userStats.extraWorkLog?.[currentDate] || []).reduce((acc, e) => acc + (e.xpAwarded || 0), 0);
+    return { totalXP: baseXP + extraXP };
+  }, [habits, currentDate, userStats.extraWorkLog]);
 
   const todayBadge = userStats.badges?.[currentDate];
 
@@ -630,7 +685,13 @@ const SmartHabitTracker = () => {
             className="add-habit-btn"
             onClick={() => {
               setEditingHabit(null);
-              setFormData({ name: '', category: 'Health', priority: 'Medium', notes: '', color: '#4f46e5' });
+              const now = new Date();
+              setEditingTargetMonthInfo({
+                key: getMonthKey(now),
+                label: now.toLocaleString('default', { month: 'long', year: 'numeric' }),
+                date: now
+              });
+              setFormData({ name: '', category: 'Health', priority: 'Medium', notes: '', color: '#4f46e5', activeDays: [0, 1, 2, 3, 4, 5, 6], allowExtraWork: true, manualTargets: {} });
               setShowAddModal(true);
             }}
           >
@@ -645,9 +706,49 @@ const SmartHabitTracker = () => {
           <span className="label">Total Habits</span>
           <span className="value">{stats.total}</span>
         </div>
+        <div className="stat-card" style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button className="calendar-nav-btn" onClick={() => setCollectiveDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1))}>
+                <ChevronLeft size={16} />
+              </button>
+              <span className="label" style={{ color: 'var(--text-main)', fontSize: '0.9rem' }}>{currentMonthStats.monthName}</span>
+              <button className="calendar-nav-btn" onClick={() => setCollectiveDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1))}>
+                <ChevronRight size={16} />
+              </button>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {currentMonthStats.extraWorkCount} Extra Logs ({currentMonthStats.totalExtraXP} XP)
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+              <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)' }}>{currentMonthStats.totalEarned}</span>
+              <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>/ {currentMonthStats.totalTarget} XP</span>
+            </div>
+            <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--primary)' }}>
+              {currentMonthStats.totalTarget > 0 ? Math.floor((currentMonthStats.totalEarned / currentMonthStats.totalTarget) * 100) : 0}%
+            </span>
+          </div>
+
+          <div className="target-mini-bar" style={{ height: '8px', background: '#f1f5f9' }}>
+            <div
+              className="target-mini-fill"
+              style={{
+                width: `${currentMonthStats.totalTarget > 0 ? Math.min(100, (currentMonthStats.totalEarned / currentMonthStats.totalTarget) * 100) : 0}%`,
+                backgroundColor: 'var(--primary)',
+                borderRadius: '10px'
+              }}
+            />
+          </div>
+        </div>
         <div className="stat-card">
           <span className="label">Today's Progress</span>
           <span className="value">{stats.completed} / {stats.total}</span>
+          <div style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 700, marginTop: '-4px' }}>
+            +{todayStats.totalXP} XP Today
+          </div>
           <div className="progress-bar-container">
             <div
               className="progress-bar-fill"
@@ -699,7 +800,9 @@ const SmartHabitTracker = () => {
                   {habitXpMap[habit.id]?.monthTarget > 0 && (
                     <div className="monthly-target-info">
                       <div className="target-progress-row">
-                        <span className="target-val">{habitXpMap[habit.id]?.monthTotal || 0} / {habitXpMap[habit.id]?.monthTarget} XP</span>
+                        <span className="target-val">
+                          {habitViewDates[habit.id]?.toLocaleString('default', { month: 'short' }) || new Date().toLocaleString('default', { month: 'short' })} Target: {habitXpMap[habit.id]?.monthTotal || 0} / {habitXpMap[habit.id]?.monthTarget} XP
+                        </span>
                         <span className="target-pct">{Math.floor(((habitXpMap[habit.id]?.monthTotal || 0) / habitXpMap[habit.id]?.monthTarget) * 100)}%</span>
                       </div>
                       <div className="target-mini-bar">
@@ -734,16 +837,22 @@ const SmartHabitTracker = () => {
                     </button>
                   )}
                   <button className="action-btn" onClick={() => {
-                    setEditingHabit(habit);
+                    const viewDate = habitViewDates[habit.id] || new Date();
+                    setEditingTargetMonthInfo({
+                      key: getMonthKey(viewDate),
+                      label: viewDate.toLocaleString('default', { month: 'long', year: 'numeric' }),
+                      date: viewDate
+                    });
+
                     setFormData({
                       name: habit.name,
                       category: habit.category,
                       priority: habit.priority,
                       notes: habit.notes,
                       color: habit.color,
-                      monthlyTarget: habit.monthlyTarget || getDefaultMonthlyTarget(habit.allowExtraWork ?? true, habit.activeDays ?? [0, 1, 2, 3, 4, 5, 6]),
                       allowExtraWork: habit.allowExtraWork ?? true,
-                      activeDays: habit.activeDays ?? [0, 1, 2, 3, 4, 5, 6]
+                      activeDays: habit.activeDays ?? [0, 1, 2, 3, 4, 5, 6],
+                      manualTargets: habit.manualTargets || {}
                     });
                     setShowAddModal(true);
                   }}>
@@ -930,10 +1039,10 @@ const SmartHabitTracker = () => {
                           ? formData.activeDays.filter(d => d !== idx)
                           : [...formData.activeDays, idx].sort();
 
+                        // Just update dependencies, target is calculated in render or manual
                         setFormData({
                           ...formData,
-                          activeDays: newActive,
-                          monthlyTarget: getDefaultMonthlyTarget(formData.allowExtraWork, newActive)
+                          activeDays: newActive
                         });
                       }}
                       style={{
@@ -962,10 +1071,10 @@ const SmartHabitTracker = () => {
                   checked={formData.allowExtraWork}
                   onChange={e => {
                     const allowed = e.target.checked;
+                    // Just update dependencies, target is calculated in render or manual
                     setFormData({
                       ...formData,
-                      allowExtraWork: allowed,
-                      monthlyTarget: getDefaultMonthlyTarget(allowed, formData.activeDays)
+                      allowExtraWork: allowed
                     });
                   }}
                   style={{ width: '18px', height: '18px' }}
@@ -976,9 +1085,64 @@ const SmartHabitTracker = () => {
               </div>
 
               <div className="form-group">
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: '#f8fafc', padding: '12px', borderRadius: '12px' }}>
-                  Target dynamically scales based on schedule: <b>{formData.monthlyTarget} XP</b> for current month.
-                </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ margin: 0 }}>Target for {editingTargetMonthInfo.label} (XP)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="checkbox"
+                      id="manualTarget"
+                      checked={formData.manualTargets[editingTargetMonthInfo.key] !== undefined}
+                      onChange={e => {
+                        const isManual = e.target.checked;
+                        const targetKey = editingTargetMonthInfo.key;
+                        const currentCaclulated = getDefaultMonthlyTarget(formData.allowExtraWork, formData.activeDays, editingTargetMonthInfo.date);
+
+                        setFormData(prev => {
+                          const newTargets = { ...prev.manualTargets };
+                          if (isManual) {
+                            newTargets[targetKey] = currentCaclulated;
+                          } else {
+                            delete newTargets[targetKey];
+                          }
+                          return { ...prev, manualTargets: newTargets };
+                        });
+                      }}
+                      style={{ width: '16px', height: '16px' }}
+                    />
+                    <label htmlFor="manualTarget" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer' }}>Set Manually</label>
+                  </div>
+                </div>
+
+                <input
+                  type="number"
+                  value={
+                    formData.manualTargets[editingTargetMonthInfo.key] !== undefined
+                      ? formData.manualTargets[editingTargetMonthInfo.key]
+                      : getDefaultMonthlyTarget(formData.allowExtraWork, formData.activeDays, editingTargetMonthInfo.date)
+                  }
+                  disabled={formData.manualTargets[editingTargetMonthInfo.key] === undefined}
+                  onChange={e => {
+                    const val = parseInt(e.target.value) || 0;
+                    setFormData(prev => ({
+                      ...prev,
+                      manualTargets: { ...prev.manualTargets, [editingTargetMonthInfo.key]: val }
+                    }));
+                  }}
+                  style={{
+                    opacity: formData.manualTargets[editingTargetMonthInfo.key] !== undefined ? 1 : 0.7,
+                    background: formData.manualTargets[editingTargetMonthInfo.key] !== undefined ? 'white' : '#f1f5f9'
+                  }}
+                />
+
+                {formData.manualTargets[editingTargetMonthInfo.key] === undefined ? (
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Auto-calculated for {editingTargetMonthInfo.label}. Changes to schedule will update this.
+                  </p>
+                ) : (
+                  <p style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '4px', fontWeight: 600 }}>
+                    Fixed target for {editingTargetMonthInfo.label}. Will NOT update with schedule changes.
+                  </p>
+                )}
               </div>
               <div className="form-group">
                 <label>Theme Color</label>
