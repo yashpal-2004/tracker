@@ -16,6 +16,7 @@ import './App.css';
 import TimetableView from './TimetableView';
 import HomeDashboard from './HomeDashboard';
 import SmartHabitTracker from './SmartHabitTracker';
+import SleepTracker from './SleepTracker';
 import { db, TASKS_COLLECTION } from './firebase';
 import {
   addDoc,
@@ -61,7 +62,8 @@ import {
   Archive,
   Search,
   Table,
-  Home
+  Home,
+  Moon
 } from 'lucide-react';
 
 const DEFAULT_SUBJECTS = [
@@ -106,7 +108,7 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [activeSubject, setActiveSubject] = useState(() => {
     const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits') return hash;
+    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep') return hash;
     return localStorage.getItem('active_subject') || 'Home';
   });
 
@@ -171,7 +173,7 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits') setActiveSubject(hash);
+      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep') setActiveSubject(hash);
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -331,7 +333,7 @@ function App() {
         <header className="main-header">
           <div className="title-group">
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject === 'Timetable' ? 'Weekly Class Schedule' : activeSubject === 'Habits' ? 'Smart Habit Tracker' : activeSubject === 'Home' ? '' : activeSubject}</h1>
+              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject === 'Timetable' ? 'Weekly Class Schedule' : activeSubject === 'Habits' ? 'Smart Habit Tracker' : activeSubject === 'Sleep' ? 'Sleep & Recovery Tracker' : activeSubject === 'Home' ? '' : activeSubject}</h1>
             </div>
 
             {(activeSubject === 'Marks Overview' || activeSubject === 'Detailed Analysis') && (
@@ -372,6 +374,8 @@ function App() {
           <TimetableView />
         ) : activeSubject === 'Habits' ? (
           <SmartHabitTracker />
+        ) : activeSubject === 'Sleep' ? (
+          <SleepTracker />
         ) : activeSubject === 'Safe Zone' ? (
           <SafeZoneView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} setThreshold={setAttendanceThreshold} />
         ) : (
@@ -622,6 +626,14 @@ function BookmarkBar({ activeSubject, onSelect, leadMsg, time }) {
           >
             <Zap size={16} />
             <span>Habits</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Sleep' ? 'active' : ''}`}
+            onClick={() => onSelect('Sleep')}
+            title="Sleep Tracker"
+          >
+            <Moon size={16} />
+            <span>Sleep</span>
           </button>
         </div>
 

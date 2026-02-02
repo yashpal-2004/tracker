@@ -48,7 +48,6 @@ import {
   arrayUnion
 } from 'firebase/firestore';
 import { db, HABITS_COLLECTION, USER_STATS_COLLECTION } from './firebase';
-import SleepTracker from './SleepTracker';
 import './SmartHabitTracker.css';
 
 const CATEGORIES = ['Health', 'Study', 'Work', 'Personal', 'Other'];
@@ -835,7 +834,6 @@ const SmartHabitTracker = () => {
         )}
       </div>
 
-      <SleepTracker />
 
       <HabitAnalytics habits={habits} userStats={userStats} />
 
