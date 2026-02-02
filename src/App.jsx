@@ -116,6 +116,14 @@ function App() {
   const [attendanceThreshold, setAttendanceThreshold] = useState(() => {
     return parseInt(localStorage.getItem('attendance_threshold')) || 75;
   });
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000 * 60); // Update every minute
+    return () => clearInterval(timer);
+  }, []);
+
+  const todayStr = useMemo(() => time.toLocaleDateString('en-CA'), [time]);
 
   useEffect(() => {
     localStorage.setItem('attendance_threshold', attendanceThreshold);
@@ -318,6 +326,7 @@ function App() {
           activeSubject={activeSubject}
           onSelect={setActiveSubject}
           leadMsg={leadMsg}
+          time={time}
         />
         <header className="main-header">
           <div className="title-group">
@@ -341,7 +350,7 @@ function App() {
         </header>
 
         {activeSubject === 'Home' ? (
-          <HomeDashboard tasks={tasks} />
+          <HomeDashboard tasks={tasks} todayStr={todayStr} />
         ) : activeSubject === 'Marks Overview' ? (
           <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="overview" onUpdate={updateTask} />
         ) : activeSubject === 'Detailed Analysis' ? (
@@ -479,15 +488,7 @@ function Sidebar({ subjects, activeSubject, onSelect, syncStatus }) {
           <span>Home</span>
           {activeSubject === 'Home' && <ChevronRight size={14} className="active-arrow" />}
         </button>
-        <button
-          className={`subject-btn ${activeSubject === 'Habits' ? 'active' : ''}`}
-          onClick={() => onSelect('Habits')}
-          style={{ marginBottom: '16px' }}
-        >
-          <Zap size={18} />
-          <span>Habits</span>
-          {activeSubject === 'Habits' && <ChevronRight size={14} className="active-arrow" />}
-        </button>
+
         <div className="sidebar-divider">Subjects</div>
         {subjects.map(subject => (
           <button
@@ -520,19 +521,12 @@ function Sidebar({ subjects, activeSubject, onSelect, syncStatus }) {
 
 
 
-function BookmarkBar({ activeSubject, onSelect, leadMsg }) {
-  const [time, setTime] = useState(new Date());
+function BookmarkBar({ activeSubject, onSelect, leadMsg, time }) {
 
-  useEffect(() => {
-    // Update more frequently to ensure seconds flip close to real time
-    const timer = setInterval(() => setTime(new Date()), 250);
-    return () => clearInterval(timer);
-  }, []);
 
   return (
-    <div className="bookmark-bar glass unified-bar">
-      <div className="bookmark-items" style={{ width: '100%', gap: '16px' }}>
-        {/* Quick External Links */}
+    <div className="bookmark-bar glass unified-bar two-rows">
+      <div className="bookmark-row">
         <div className="nav-group">
           <a
             href="https://my.newtonschool.co/course/8adqgomb044s/details"
@@ -566,9 +560,8 @@ function BookmarkBar({ activeSubject, onSelect, leadMsg }) {
           </a>
         </div>
 
-        <div className="bookmark-divider"></div>
+        <div className="nav-divider-vertical"></div>
 
-        {/* Global Navigation */}
         <div className="nav-group">
           <button
             className={`nav-btn ${activeSubject === 'Marks Overview' ? 'active' : ''}`}
@@ -588,8 +581,15 @@ function BookmarkBar({ activeSubject, onSelect, leadMsg }) {
           </button>
         </div>
 
-        <div className="nav-divider-vertical"></div>
+        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+          <ExamCountdown now={time} />
+          <div style={{ paddingRight: '4px', fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
+            {leadMsg}
+          </div>
+        </div>
+      </div>
 
+      <div className="bookmark-row">
         <div className="nav-group">
           <button
             className={`nav-btn ${activeSubject === 'Activity Tracker' ? 'active' : ''}`}
@@ -652,13 +652,6 @@ function BookmarkBar({ activeSubject, onSelect, leadMsg }) {
             <Calendar size={16} />
             <span>Calendar</span>
           </button>
-        </div>
-
-        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-          <ExamCountdown now={time} />
-          <div style={{ paddingRight: '4px', fontSize: '0.75rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
-            {leadMsg}
-          </div>
         </div>
       </div>
     </div>

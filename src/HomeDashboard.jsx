@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const HomeDashboard = ({ tasks }) => {
+const HomeDashboard = ({ tasks, todayStr }) => {
     const stats = useMemo(() => {
         const activeTasks = tasks.filter(t => t.type !== 'friend_meta');
 
@@ -31,7 +31,7 @@ const HomeDashboard = ({ tasks }) => {
         for (let i = 13; i >= 0; i--) {
             const d = new Date();
             d.setDate(d.getDate() - i);
-            const dateStr = d.toISOString().split('T')[0];
+            const dateStr = d.toLocaleDateString('en-CA');
             dates.push(dateStr);
             data[dateStr] = 0;
         }
@@ -49,7 +49,7 @@ const HomeDashboard = ({ tasks }) => {
 
             if (activityDate) {
                 const d = new Date(activityDate);
-                if (!isNaN(d.getTime())) dateStr = d.toISOString().split('T')[0];
+                if (!isNaN(d.getTime())) dateStr = d.toLocaleDateString('en-CA');
             }
 
             if (dateStr && data[dateStr] !== undefined) {
@@ -118,11 +118,11 @@ const HomeDashboard = ({ tasks }) => {
 
     const todaySchedule = useMemo(() => {
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thurs', 'Fri', 'Sat'];
-        const todayIndex = new Date().getDay();
-        const today = days[todayIndex];
+        const date = new Date(todayStr); // Use the string to ensure it aligns with the local day
+        const today = days[date.getDay()];
         const daySchedule = SCHEDULE_DATA.find(d => d.day === today);
         return daySchedule ? daySchedule.items : [];
-    }, []);
+    }, [todayStr]);
 
     const getHeatmapColor = (count) => {
         if (count === 0) return '#f1f5f9';

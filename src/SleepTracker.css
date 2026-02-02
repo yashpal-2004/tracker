@@ -1,0 +1,227 @@
+.sleep-tracker-section {
+    padding: 24px;
+    border-radius: 24px;
+    background: white;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    margin-top: 24px;
+}
+
+.sleep-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.sleep-title-group {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.icon-badge {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: #f0f4ff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #4f46e5;
+}
+
+.add-sleep-btn {
+    background: #4f46e5;
+    color: white;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.add-sleep-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+.sleep-analytics-detailed {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 24px;
+    padding: 24px;
+    background: #f8fafc;
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+}
+
+.analytics-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+}
+
+.sleep-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sleep-history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-radius: 14px;
+    border: 1px solid #f1f5f9;
+    background: white;
+    transition: all 0.2s;
+}
+
+.sleep-history-item:hover {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    transform: translateX(4px);
+}
+
+.log-date {
+    display: flex;
+    flex-direction: column;
+    width: 80px;
+}
+
+.log-date .day {
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: #4f46e5;
+    text-transform: uppercase;
+}
+
+.log-date .date {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.log-times {
+    display: flex;
+    gap: 20px;
+    flex: 1;
+}
+
+.time-block {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.log-duration {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-right: 16px;
+}
+
+.dur-val {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: #1e293b;
+}
+
+.nap-tag {
+    font-size: 0.65rem;
+    background: #fff7ed;
+    color: #f59e0b;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    cursor: help;
+}
+
+.delete-log-btn {
+    padding: 6px;
+    border-radius: 8px;
+    color: #cbd5e1;
+    transition: all 0.2s;
+}
+
+.delete-log-btn:hover {
+    color: #ef4444;
+    background: #fee2e2;
+}
+
+.empty-sleep-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 32px;
+    background: #f8fafc;
+    border-radius: 16px;
+    color: #64748b;
+    font-size: 0.95rem;
+    font-weight: 500;
+    border: 2px dashed #e2e8f0;
+}
+
+.quality-selector {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.quality-btn {
+    flex: 1;
+    height: 44px;
+    border-radius: 10px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    font-weight: 700;
+    color: #64748b;
+    transition: all 0.2s;
+}
+
+.quality-btn.active {
+    background: #4f46e5;
+    color: white;
+    border-color: #4f46e5;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+}
+
+.quality-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #94a3b8;
+    margin-top: 6px;
+    text-transform: uppercase;
+}
+
+.sleep-modal {
+    max-width: 480px !important;
+}
+
+@media (max-width: 768px) {
+    .log-times {
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .sleep-history-item {
+        flex-wrap: wrap;
+    }
+}

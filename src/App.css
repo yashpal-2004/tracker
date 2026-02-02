@@ -1455,6 +1455,20 @@
   width: 100%;
 }
 
+.bookmark-bar.two-rows {
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  padding: 12px 16px;
+}
+
+.bookmark-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
 .bookmark-items {
   display: flex;
   align-items: center;
