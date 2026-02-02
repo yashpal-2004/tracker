@@ -4,9 +4,13 @@ import {
     CheckCircle2,
     Clock,
     Calendar,
-    Zap
+    Zap,
+    BookOpen,
+    PlayCircle,
+    CheckCircle
 } from 'lucide-react';
 import './App.css';
+import { getCurrentLecture, getNextLecture, getPendingLectures } from './autoLectureCreator';
 
 const HomeDashboard = ({ tasks, todayStr }) => {
     const stats = useMemo(() => {
@@ -158,6 +162,9 @@ const HomeDashboard = ({ tasks, todayStr }) => {
                 </div>
             </div>
 
+            {/* Live Lecture Status Widget */}
+            <LiveLectureStatus tasks={tasks} />
+
             {/* Two Column Layout */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: '24px', marginBottom: '24px' }}>
                 {/* Left Column - Heatmap */}
@@ -244,6 +251,139 @@ const HomeDashboard = ({ tasks, todayStr }) => {
                 </section>
             </div>
         </div>
+    );
+};
+
+// Live Lecture Status Component
+const LiveLectureStatus = ({ tasks }) => {
+    const [currentTime, setCurrentTime] = React.useState(new Date());
+
+    React.useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000 * 60); // Update every minute
+        return () => clearInterval(timer);
+    }, []);
+
+    const currentLecture = useMemo(() => getCurrentLecture(currentTime), [currentTime]);
+    const nextLecture = useMemo(() => getNextLecture(currentTime), [currentTime]);
+    const pendingLectures = useMemo(() => getPendingLectures(currentTime, tasks), [currentTime, tasks]);
+
+    const formatMinutes = (minutes) => {
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        if (hours > 0) {
+            return `${hours}h ${mins}m`;
+        }
+        return `${mins}m`;
+    };
+
+    if (!currentLecture && !nextLecture && pendingLectures.length === 0) {
+        return null; // Don't show widget if no relevant info
+    }
+
+    return (
+        <section className="dashboard-section glass" style={{
+            padding: '20px',
+            marginBottom: '24px',
+            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05))',
+            border: '1px solid rgba(99, 102, 241, 0.2)'
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                {/* Current Lecture */}
+                {currentLecture && (
+                    <div style={{
+                        flex: '1',
+                        minWidth: '280px',
+                        padding: '16px',
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        borderRadius: '12px',
+                        color: 'white',
+                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <PlayCircle size={20} fill="white" />
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                In Progress
+                            </span>
+                        </div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '4px' }}>
+                            {currentLecture.name}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                            {currentLecture.room} • Ends in {formatMinutes(currentLecture.minutesRemaining)}
+                        </div>
+                    </div>
+                )}
+
+                {/* Next Lecture */}
+                {nextLecture && !currentLecture && (
+                    <div style={{
+                        flex: '1',
+                        minWidth: '280px',
+                        padding: '16px',
+                        background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                        borderRadius: '12px',
+                        color: 'white',
+                        boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <BookOpen size={20} />
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Up Next
+                            </span>
+                        </div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '4px' }}>
+                            {nextLecture.name}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                            {nextLecture.room} • Starts in {formatMinutes(nextLecture.minutesUntil)}
+                        </div>
+                    </div>
+                )}
+
+                {/* Auto-Created Lectures Status */}
+                {pendingLectures.length > 0 && (
+                    <div style={{
+                        flex: '1',
+                        minWidth: '280px',
+                        padding: '16px',
+                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                        borderRadius: '12px',
+                        color: 'white',
+                        boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <CheckCircle size={20} fill="white" />
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Auto-Creating
+                            </span>
+                        </div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '4px' }}>
+                            {pendingLectures.length} Lecture{pendingLectures.length > 1 ? 's' : ''} Pending
+                        </div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                            Will be added automatically
+                        </div>
+                    </div>
+                )}
+
+                {/* Info Message */}
+                {!currentLecture && nextLecture && (
+                    <div style={{
+                        flex: '1',
+                        minWidth: '280px',
+                        padding: '16px',
+                        background: 'rgba(255, 255, 255, 0.5)',
+                        borderRadius: '12px',
+                        border: '1px dashed #cbd5e1'
+                    }}>
+                        <div style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: '1.5' }}>
+                            <strong style={{ color: '#1e293b' }}>✨ Auto-Lecture Creator Active</strong><br />
+                            Lectures will be automatically added to their respective subjects when classes end.
+                        </div>
+                    </div>
+                )}
+            </div>
+        </section>
     );
 };
 

@@ -273,7 +273,6 @@ const SleepTracker = () => {
                 end += 24;
             }
 
-            console.log(`[Sleep Chart] ${log.date}: sleepDecimal=${log.sleepDecimal}, wakeDecimal=${log.wakeDecimal}, normalized start=${start}, end=${end}`);
 
             return {
                 day: new Date(log.date).toLocaleDateString('default', { month: 'short', day: 'numeric' }),

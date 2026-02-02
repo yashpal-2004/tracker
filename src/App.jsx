@@ -18,6 +18,7 @@ import HomeDashboard from './HomeDashboard';
 import SmartHabitTracker from './SmartHabitTracker';
 import SleepTracker from './SleepTracker';
 import { db, TASKS_COLLECTION } from './firebase';
+import { getPendingLectures, getCurrentLecture, getNextLecture } from './autoLectureCreator';
 import {
   addDoc,
   updateDoc,
@@ -130,6 +131,50 @@ function App() {
   useEffect(() => {
     localStorage.setItem('attendance_threshold', attendanceThreshold);
   }, [attendanceThreshold]);
+
+  // Auto-create lectures based on timetable
+  useEffect(() => {
+    if (loading || tasks.length === 0) return; // Wait for tasks to load
+
+    const checkAndCreateLectures = async () => {
+      const pendingLectures = getPendingLectures(time, tasks);
+
+      if (pendingLectures.length > 0) {
+        for (const lecture of pendingLectures) {
+          // Find the next lecture number for this subject
+          const subjectLectures = tasks.filter(
+            t => t.type === 'lecture' && t.subjectName === lecture.subject
+          );
+          const nextNumber = subjectLectures.length + 1;
+
+          // Create the lecture entry
+          const newLecture = {
+            subjectName: lecture.subject,
+            type: 'lecture',
+            name: lecture.name,
+            number: nextNumber,
+            completed: false, // Mark as NOT completed by default (user will complete it later)
+            present: true,    // Mark as present by default
+            important: false,
+            date: lecture.date,
+            notes: '',
+            notionUrl: '',
+            createdAt: Date.now(),
+            autoCreated: true // Flag to indicate this was auto-created
+          };
+
+          try {
+            await addDoc(TASKS_COLLECTION, newLecture);
+          } catch (error) {
+            console.error('Error auto-creating lecture:', error);
+          }
+        }
+      }
+    };
+
+    checkAndCreateLectures();
+  }, [time, tasks, loading]); // Run every minute when time updates
+
 
   // Sync with Firestore
   useEffect(() => {
@@ -269,9 +314,26 @@ function App() {
   };
 
   const deleteTask = async (id) => {
-    if (window.confirm('Delete this task?')) {
+    const confirmed = window.confirm('Delete this task?');
+
+    if (confirmed) {
       try {
         const task = tasks.find(t => t.id === id);
+
+        // If this is an auto-created lecture, mark it as manually deleted
+        // so it won't be auto-recreated
+        if (task && task.type === 'lecture' && task.autoCreated) {
+          const deletedKey = `${task.subjectName}_${task.name}_${task.date}`;
+          const deletedLectures = JSON.parse(localStorage.getItem('deleted_lectures') || '{}');
+          deletedLectures[deletedKey] = {
+            name: task.name,
+            subject: task.subjectName,
+            date: task.date,
+            deletedAt: Date.now()
+          };
+          localStorage.setItem('deleted_lectures', JSON.stringify(deletedLectures));
+        }
+
         await deleteDoc(doc(db, 'tasks', id));
 
         // Delta Sync for Dhruv
@@ -281,9 +343,13 @@ function App() {
             await updateDoc(doc(db, 'tasks', fm.id), { attendanceCount: Math.max(0, (fm.attendanceCount || 0) - 1) });
           }
         }
+
+
       } catch (e) {
         console.error("Error deleting document: ", e);
+        alert('Failed to delete task. Error: ' + e.message);
       }
+    } else {
     }
   };
 
@@ -479,8 +545,10 @@ function Sidebar({ subjects, activeSubject, onSelect, syncStatus }) {
   return (
     <aside className="sidebar glass" style={{ position: 'relative' }}>
       <div className="sidebar-header">
-        <BookOpen size={24} className="logo-icon" />
-        <h2 className="logo-text">Scholara</h2>
+        <div className="logo-container">
+          <Zap size={28} className="logo-icon" fill="var(--primary)" fillOpacity="0.15" />
+          <h2 className="logo-text">Track<span>U</span></h2>
+        </div>
       </div>
       <nav className="subject-list">
         <button
@@ -897,6 +965,24 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                       <a href={task.notionUrl} target="_blank" rel="noreferrer" className="notion-link" title="Open Notion Notes">
                         <NotionLogo size={15} />
                       </a>
+                    )}
+                    {task.autoCreated && (
+                      <span
+                        style={{
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
+                          color: 'white',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.03em',
+                          boxShadow: '0 2px 4px rgba(245, 158, 11, 0.3)'
+                        }}
+                        title="Automatically created from timetable"
+                      >
+                        ✨ Auto
+                      </span>
                     )}
                   </div>
                 ) : (
