@@ -17,6 +17,7 @@ import TimetableView from './TimetableView';
 import HomeDashboard from './HomeDashboard';
 import SmartHabitTracker from './SmartHabitTracker';
 import SleepTracker from './SleepTracker';
+import TimeTracker from './TimeTracker';
 import { db, TASKS_COLLECTION } from './firebase';
 import { getPendingLectures, getCurrentLecture, getNextLecture } from './autoLectureCreator';
 import {
@@ -64,7 +65,8 @@ import {
   Search,
   Table,
   Home,
-  Moon
+  Moon,
+  Timer
 } from 'lucide-react';
 
 const DEFAULT_SUBJECTS = [
@@ -109,7 +111,7 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [activeSubject, setActiveSubject] = useState(() => {
     const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep') return hash;
+    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep' || hash === 'Focus') return hash;
     return localStorage.getItem('active_subject') || 'Home';
   });
 
@@ -218,7 +220,7 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep') setActiveSubject(hash);
+      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep' || hash === 'Focus') setActiveSubject(hash);
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -399,7 +401,7 @@ function App() {
         <header className="main-header">
           <div className="title-group">
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject === 'Timetable' ? 'Weekly Class Schedule' : activeSubject === 'Habits' ? 'Smart Habit Tracker' : activeSubject === 'Sleep' ? 'Sleep & Recovery Tracker' : activeSubject === 'Home' ? '' : activeSubject}</h1>
+              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject === 'Timetable' ? 'Weekly Class Schedule' : activeSubject === 'Habits' ? 'Smart Habit Tracker' : activeSubject === 'Sleep' ? 'Sleep & Recovery Tracker' : activeSubject === 'Focus' ? 'Flow State Hub' : activeSubject === 'Home' ? '' : activeSubject}</h1>
             </div>
 
             {(activeSubject === 'Marks Overview' || activeSubject === 'Detailed Analysis') && (
@@ -442,6 +444,8 @@ function App() {
           <SmartHabitTracker />
         ) : activeSubject === 'Sleep' ? (
           <SleepTracker />
+        ) : activeSubject === 'Focus' ? (
+          <TimeTracker />
         ) : activeSubject === 'Safe Zone' ? (
           <SafeZoneView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} setThreshold={setAttendanceThreshold} />
         ) : (
@@ -554,12 +558,14 @@ function Sidebar({ subjects, activeSubject, onSelect, syncStatus }) {
         <button
           className={`subject-btn ${activeSubject === 'Home' ? 'active' : ''}`}
           onClick={() => onSelect('Home')}
-          style={{ marginBottom: '16px' }}
+          style={{ marginBottom: '8px' }}
         >
           <Home size={18} />
           <span>Home</span>
           {activeSubject === 'Home' && <ChevronRight size={14} className="active-arrow" />}
         </button>
+
+
 
         <div className="sidebar-divider">Subjects</div>
         {subjects.map(subject => (
@@ -622,6 +628,14 @@ function BookmarkBar({ activeSubject, onSelect, leadMsg, time }) {
           >
             <Activity size={16} />
             <span>Tracker</span>
+          </button>
+          <button
+            className={`nav-btn ${activeSubject === 'Focus' ? 'active' : ''}`}
+            onClick={() => onSelect('Focus')}
+            title="Flow State Hub"
+          >
+            <Timer size={16} />
+            <span>Flow</span>
           </button>
         </div>
 
@@ -697,7 +711,7 @@ function BookmarkBar({ activeSubject, onSelect, leadMsg, time }) {
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-          <ExamCountdown now={time} />
+          <ExamCountdown />
           <div style={{ paddingRight: '4px', fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
             {leadMsg}
           </div>
@@ -2715,20 +2729,21 @@ function ActivityHeatmap({ tasks }) {
               borderRadius: '4px',
               background: getColor(count),
               border: count === 0 ? '1px solid #e2e8f0' : 'none',
-              transition: 'all 0.2s',
+              boxShadow: count > 0 ? '0 2px 0 rgba(0,0,0,0.1), 0 2px 3px rgba(0,0,0,0.05)' : 'inset 0 1px 3px rgba(0,0,0,0.05)',
+              transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
               cursor: 'pointer',
               position: 'relative'
             }}
             title={`${date}: ${count} activities`}
             onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.2)';
+              e.currentTarget.style.transform = 'translateY(-2px) scale(1.1)';
               e.currentTarget.style.zIndex = '10';
-              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+              e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.1), 0 2px 0 rgba(0,0,0,0.1)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.transform = 'translateY(0) scale(1)';
               e.currentTarget.style.zIndex = '1';
-              e.currentTarget.style.boxShadow = 'none';
+              e.currentTarget.style.boxShadow = count > 0 ? '0 2px 0 rgba(0,0,0,0.1), 0 2px 3px rgba(0,0,0,0.05)' : 'inset 0 1px 3px rgba(0,0,0,0.05)';
             }}
           >
           </div>

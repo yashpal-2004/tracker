@@ -370,6 +370,19 @@ const SleepTracker = () => {
                                     data={stats.chartData}
                                     margin={{ top: 20, right: 20, left: 0, bottom: 0 }}
                                 >
+                                    <defs>
+                                        <filter id="shadow3d_sleep_dur" x="-20%" y="-20%" width="140%" height="140%">
+                                            <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+                                            <feOffset dx="2" dy="4" result="offsetblur" />
+                                            <feComponentTransfer>
+                                                <feFuncA type="linear" slope="0.2" />
+                                            </feComponentTransfer>
+                                            <feMerge>
+                                                <feMergeNode />
+                                                <feMergeNode in="SourceGraphic" />
+                                            </feMerge>
+                                        </filter>
+                                    </defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                     <XAxis
                                         dataKey="day"
@@ -422,12 +435,12 @@ const SleepTracker = () => {
                                     <ReferenceLine y={7.5} yAxisId="left" stroke="#10b981" strokeDasharray="3 3" label={{ value: 'Target (7.5h)', position: 'insideTopRight', fontSize: 10, fill: '#10b981', fontWeight: 700 }} />
                                     <ReferenceLine y={6} yAxisId="left" stroke="#f59e0b" strokeDasharray="3 3" strokeOpacity={0.6} label={{ value: 'Min (6h)', position: 'insideTopRight', fontSize: 10, fill: '#f59e0b' }} />
 
-                                    <Bar yAxisId="left" dataKey="duration" radius={[8, 8, 0, 0]} barSize={40}>
+                                    <Bar yAxisId="left" dataKey="duration" radius={[8, 8, 0, 0]} barSize={40} style={{ filter: 'url(#shadow3d_sleep_dur)' }}>
                                         {stats.chartData.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.duration >= 7.3 ? '#10b981' : entry.duration >= 6 ? '#818cf8' : '#ef4444'} fillOpacity={0.85} />
                                         ))}
                                     </Bar>
-                                    <Line yAxisId="left" type="monotone" dataKey="duration" stroke="#4f46e5" strokeWidth={2} dot={{ fill: '#4f46e5', r: 4 }} />
+                                    <Line yAxisId="left" type="monotone" dataKey="duration" stroke="#4f46e5" strokeWidth={2} dot={{ fill: '#4f46e5', r: 4 }} style={{ filter: 'url(#shadow3d_sleep_dur)' }} />
                                 </ComposedChart>
                             </ResponsiveContainer>
                         </div>
@@ -463,6 +476,19 @@ const SleepTracker = () => {
                                     }))}
                                     margin={{ top: 20, right: 20, left: 0, bottom: 0 }}
                                 >
+                                    <defs>
+                                        <filter id="shadow3d_sleep_con" x="-20%" y="-20%" width="140%" height="140%">
+                                            <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+                                            <feOffset dx="2" dy="4" result="offsetblur" />
+                                            <feComponentTransfer>
+                                                <feFuncA type="linear" slope="0.2" />
+                                            </feComponentTransfer>
+                                            <feMerge>
+                                                <feMergeNode />
+                                                <feMergeNode in="SourceGraphic" />
+                                            </feMerge>
+                                        </filter>
+                                    </defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                     <XAxis
                                         dataKey="day"
@@ -505,8 +531,8 @@ const SleepTracker = () => {
                                     <ReferenceLine y={24} stroke="#8b5cf6" strokeDasharray="3 3" strokeOpacity={0.4} label={{ value: 'Target Bedtime (12 AM)', position: 'insideTopLeft', fontSize: 9, fill: '#8b5cf6' }} />
                                     <ReferenceLine y={31.5} stroke="#f59e0b" strokeDasharray="3 3" strokeOpacity={0.4} label={{ value: 'Target Wake (7:30 AM)', position: 'insideBottomLeft', fontSize: 9, fill: '#f59e0b' }} />
 
-                                    <Line type="monotone" dataKey="bedtimeDisplay" stroke="#8b5cf6" strokeWidth={2.5} dot={{ fill: '#8b5cf6', r: 5, strokeWidth: 2, stroke: 'white' }} name="Bedtime" />
-                                    <Line type="monotone" dataKey="wakeDisplay" stroke="#f59e0b" strokeWidth={2.5} dot={{ fill: '#f59e0b', r: 5, strokeWidth: 2, stroke: 'white' }} name="Wake Time" />
+                                    <Line type="monotone" dataKey="bedtimeDisplay" stroke="#8b5cf6" strokeWidth={2.5} dot={{ fill: '#8b5cf6', r: 5, strokeWidth: 2, stroke: 'white' }} name="Bedtime" style={{ filter: 'url(#shadow3d_sleep_con)' }} />
+                                    <Line type="monotone" dataKey="wakeDisplay" stroke="#f59e0b" strokeWidth={2.5} dot={{ fill: '#f59e0b', r: 5, strokeWidth: 2, stroke: 'white' }} name="Wake Time" style={{ filter: 'url(#shadow3d_sleep_con)' }} />
                                 </ComposedChart>
                             </ResponsiveContainer>
                         </div>
@@ -541,7 +567,7 @@ const SleepTracker = () => {
                                         <div className="log-details">
                                             <div className="metric-row">
                                                 <div className="time-badge">
-                                                    <Moon size={12} /> {log.sleepTime} - {log.wakeTime}
+                                                    <Moon size={12} /> {formatTimeTick(timeToDecimal(log.sleepTime))} - {formatTimeTick(timeToDecimal(log.wakeTime))}
                                                 </div>
                                                 {log.napDuration > 0 && (
                                                     <div className="nap-badge">

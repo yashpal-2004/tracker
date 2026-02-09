@@ -37,7 +37,8 @@ if (typeof window !== 'undefined') {
 
 export const TASKS_COLLECTION = collection(db, 'tasks');
 export const HABITS_COLLECTION = collection(db, 'habits');
+export const TIME_LOGS_COLLECTION = collection(db, 'timeLogs');
+export const TIME_TRACKER_COLLECTION = collection(db, 'timeTracker');
 export const SLEEP_COLLECTION = collection(db, 'sleepLogs');
 export const USER_STATS_COLLECTION = collection(db, 'userStats');
 export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
-

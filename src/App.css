@@ -1,9 +1,10 @@
 .app-layout {
   display: flex;
   height: 100vh;
-  width: 100vw;
+  width: 100%;
   background: #f8fafc;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 /* Sidebar Styling (Subjects Only) */
@@ -28,28 +29,28 @@
   align-items: center;
   gap: 12px;
   cursor: pointer;
+  perspective: 1000px;
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .logo-container:hover {
-  transform: scale(1.02);
+  transform: scale(1.05);
 }
 
 .logo-icon {
   color: var(--primary);
   filter: drop-shadow(0 0 8px var(--primary-glow));
-  animation: logo-float 3s ease-in-out infinite;
+  animation: logo-revolve 4s linear infinite;
+  transform-style: preserve-3d;
 }
 
-@keyframes logo-float {
-
-  0%,
-  100% {
-    transform: translateY(0) rotate(0);
+@keyframes logo-revolve {
+  0% {
+    transform: rotateY(0deg);
   }
 
-  50% {
-    transform: translateY(-3px) rotate(5deg);
+  100% {
+    transform: rotateY(360deg);
   }
 }
 
@@ -1994,6 +1995,7 @@ input[type="checkbox"]:hover {
 
 .highlight-text {
   background: linear-gradient(135deg, var(--primary), var(--secondary));
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -2396,4 +2398,116 @@ input[type="checkbox"]:hover {
     width: 100%;
     justify-content: space-between;
   }
+}
+
+/* --- Global 3D & Neumorphism Overrides --- */
+
+/* 3D Buttons */
+.add-btn,
+.action-btn,
+.nav-btn,
+.subject-btn {
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow:
+    0 4px 0 rgba(0, 0, 0, 0.15),
+    0 5px 10px rgba(0, 0, 0, 0.1);
+  transform: translateY(0);
+  border-bottom: 3px solid rgba(0, 0, 0, 0.1);
+}
+
+.add-btn:hover,
+.action-btn:hover,
+.nav-btn:hover,
+.subject-btn:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 0 rgba(0, 0, 0, 0.15),
+    0 15px 20px rgba(0, 0, 0, 0.15);
+}
+
+.add-btn:active,
+.action-btn:active,
+.nav-btn:active,
+.subject-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0.15), inset 0 2px 5px rgba(0, 0, 0, 0.1);
+  border-bottom-width: 0;
+}
+
+/* 3D Cards */
+.card,
+.stat-card,
+.task-section,
+.glass,
+.task-item,
+.progress-card,
+.event-block,
+.exam-countdown {
+  box-shadow:
+    8px 8px 16px rgba(0, 0, 0, 0.05),
+    -4px -4px 12px rgba(255, 255, 255, 0.8),
+    0 10px 20px rgba(0, 0, 0, 0.05);
+  /* Float effect */
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-bottom: 4px solid rgba(0, 0, 0, 0.05);
+  /* Thickness */
+  transform-style: preserve-3d;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover,
+.stat-card:hover,
+.task-section:hover,
+.task-item:hover,
+.progress-card:hover {
+  transform: translateY(-5px) rotateX(2deg);
+  box-shadow:
+    0 20px 30px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgba(255, 255, 255, 0.5);
+  border-bottom-width: 6px;
+}
+
+/* 3D Inputs */
+input,
+select,
+textarea {
+  box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.05), inset -2px -2px 5px rgba(255, 255, 255, 0.8);
+  border: 1px solid #e2e8f0;
+  border-bottom: 2px solid #cbd5e1;
+  transition: all 0.2s;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+  border-color: var(--primary);
+  border-bottom-width: 3px;
+}
+
+/* 3D Icons (Subtle) */
+svg.lucide {
+  filter: drop-shadow(1px 2px 2px rgba(0, 0, 0, 0.15));
+}
+
+/* Enhance existing glass class if it exists or create it */
+.glass {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.4));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* 3D Toggle Buttons */
+.view-toggle button,
+.nav-subject-btn {
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.1);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.1);
+}
+
+.view-toggle button.active,
+.nav-subject-btn.active {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  transform: translateY(2px);
+  border-bottom: none;
 }

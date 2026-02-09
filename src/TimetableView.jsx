@@ -5,47 +5,47 @@ export const SCHEDULE_DATA = [
     {
         day: 'Mon',
         items: [
-            { name: 'Data and Visual Analytics Lec', time: '9:00 - 10:20', room: 'A409', color: 'green', start: 9 * 60, duration: 80 },
-            { name: 'Discrete Mathematics Lab', time: '10:30 - 11:50', room: 'Lab 1: A409, Lab 2: A410', color: 'orange', start: 10 * 60 + 30, duration: 80 },
-            { name: 'Minor', time: '12:00 - 12:50', room: 'A410', color: 'pink', start: 12 * 60, duration: 50 },
-            { name: 'Lunch', time: '1:00 - 2:00', color: 'yellow', start: 13 * 60, duration: 60 },
-            { name: 'Intro to Gen AI Lec', time: '2:00 - 3:20', room: 'C201', color: 'blue', start: 14 * 60, duration: 80 },
-            { name: 'Discrete Mathematics Lec', time: '3:30 - 4:50', room: 'C201', color: 'orange', start: 15 * 60 + 30, duration: 80 },
+            { name: 'Data and Visual Analytics Lec', time: '9:00 AM - 10:20 AM', room: 'A409', color: 'green', start: 9 * 60, duration: 80 },
+            { name: 'Discrete Mathematics Lab', time: '10:30 AM - 11:50 AM', room: 'Lab 1: A409, Lab 2: A410', color: 'orange', start: 10 * 60 + 30, duration: 80 },
+            { name: 'Minor', time: '12:00 PM - 12:50 PM', room: 'A410', color: 'pink', start: 12 * 60, duration: 50 },
+            { name: 'Lunch', time: '1:00 PM - 2:00 PM', color: 'yellow', start: 13 * 60, duration: 60 },
+            { name: 'Intro to Gen AI Lec', time: '2:00 PM - 3:20 PM', room: 'C201', color: 'blue', start: 14 * 60, duration: 80 },
+            { name: 'Discrete Mathematics Lec', time: '3:30 PM - 4:50 PM', room: 'C201', color: 'orange', start: 15 * 60 + 30, duration: 80 },
 
         ]
     },
     {
         day: 'Tue',
         items: [
-            { name: 'Data and Visual Analytics Lab', time: '9:00 - 10:20', room: 'C201 / C202', color: 'green', start: 9 * 60, duration: 80 },
-            { name: 'System Design Lecture', time: '10:30 - 11:50', room: 'C301', color: 'purple', start: 10 * 60 + 30, duration: 80 },
-            { name: 'Minor', time: '12:00 - 12:50', room: 'A410', color: 'pink', start: 12 * 60, duration: 50 },
-            { name: 'Lunch', time: '1:00 - 2:00', color: 'yellow', start: 13 * 60, duration: 60 },
-            { name: 'Intro to Gen AI Lab', time: '2:00 - 3:20', room: 'A403 / A405', color: 'blue', start: 14 * 60, duration: 80 },
-            { name: 'System Design Lab', time: '3:30 - 4:50', room: 'A403 / A405', color: 'purple', start: 15 * 60 + 30, duration: 80 },
+            { name: 'Data and Visual Analytics Lab', time: '9:00 AM - 10:20 AM', room: 'C201 / C202', color: 'green', start: 9 * 60, duration: 80 },
+            { name: 'System Design Lecture', time: '10:30 AM - 11:50 AM', room: 'C301', color: 'purple', start: 10 * 60 + 30, duration: 80 },
+            { name: 'Minor', time: '12:00 PM - 12:50 PM', room: 'A410', color: 'pink', start: 12 * 60, duration: 50 },
+            { name: 'Lunch', time: '1:00 PM - 2:00 PM', color: 'yellow', start: 13 * 60, duration: 60 },
+            { name: 'Intro to Gen AI Lab', time: '2:00 PM - 3:20 PM', room: 'A403 / A405', color: 'blue', start: 14 * 60, duration: 80 },
+            { name: 'System Design Lab', time: '3:30 PM - 4:50 PM', room: 'A403 / A405', color: 'purple', start: 15 * 60 + 30, duration: 80 },
 
         ]
     },
     {
         day: 'Wed',
         items: [
-            { name: 'Data and Visual Analytics Lec', time: '9:00 - 10:20', room: 'A409', color: 'green', start: 9 * 60, duration: 80 },
-            { name: 'Discrete Mathematics Lab', time: '10:30 - 11:50', room: 'Lab 1: A409, Lab 2: A410', color: 'orange', start: 10 * 60 + 30, duration: 80 },
-            { name: 'Lunch', time: '12:00 - 1:00', color: 'yellow', start: 12 * 60, duration: 60 },
-            { name: 'Discrete Mathematics Lec', time: '1:30 - 2:50', room: 'C201', color: 'orange', start: 13 * 60 + 30, duration: 80 },
-            { name: 'Intro to Gen AI Lec', time: '3:00 - 4:20', room: 'C201', color: 'blue', start: 15 * 60, duration: 80 },
+            { name: 'Data and Visual Analytics Lec', time: '9:00 AM - 10:20 AM', room: 'A409', color: 'green', start: 9 * 60, duration: 80 },
+            { name: 'Discrete Mathematics Lab', time: '10:30 AM - 11:50 AM', room: 'Lab 1: A409, Lab 2: A410', color: 'orange', start: 10 * 60 + 30, duration: 80 },
+            { name: 'Lunch', time: '12:00 PM - 1:00 PM', color: 'yellow', start: 12 * 60, duration: 60 },
+            { name: 'Discrete Mathematics Lec', time: '1:30 PM - 2:50 PM', room: 'C201', color: 'orange', start: 13 * 60 + 30, duration: 80 },
+            { name: 'Intro to Gen AI Lec', time: '3:00 PM - 4:20 PM', room: 'C201', color: 'blue', start: 15 * 60, duration: 80 },
 
         ]
     },
     {
         day: 'Thurs',
         items: [
-            { name: 'Data and Visual Analytics Lab', time: '9:00 - 10:20', room: 'C201 / C202', color: 'green', start: 9 * 60, duration: 80 },
-            { name: 'System Design Lecture', time: '10:30 - 11:50', room: 'C201', color: 'purple', start: 10 * 60 + 30, duration: 80 },
-            { name: 'Intro to Gen AI Lab', time: '12:00 - 1:20', room: 'C201 / C202', color: 'blue', start: 12 * 60, duration: 80 },
-            { name: 'Lunch', time: '1:20 - 2:00', color: 'yellow', start: 13 * 60 + 20, duration: 40 },
-            { name: 'Minor', time: '2:30 - 3:20', room: 'A410', color: 'pink', start: 14 * 60 + 30, duration: 50 },
-            { name: 'System Design Lab', time: '3:30 - 4:50', room: 'A501 / A502', color: 'purple', start: 15 * 60 + 30, duration: 80 },
+            { name: 'Data and Visual Analytics Lab', time: '9:00 AM - 10:20 AM', room: 'C201 / C202', color: 'green', start: 9 * 60, duration: 80 },
+            { name: 'System Design Lecture', time: '10:30 AM - 11:50 AM', room: 'C201', color: 'purple', start: 10 * 60 + 30, duration: 80 },
+            { name: 'Intro to Gen AI Lab', time: '12:00 PM - 1:20 PM', room: 'C201 / C202', color: 'blue', start: 12 * 60, duration: 80 },
+            { name: 'Lunch', time: '1:20 PM - 2:00 PM', color: 'yellow', start: 13 * 60 + 20, duration: 40 },
+            { name: 'Minor', time: '2:30 PM - 3:20 PM', room: 'A410', color: 'pink', start: 14 * 60 + 30, duration: 50 },
+            { name: 'System Design Lab', time: '3:30 PM - 4:50 PM', room: 'A501 / A502', color: 'purple', start: 15 * 60 + 30, duration: 80 },
 
         ]
     },
@@ -53,8 +53,8 @@ export const SCHEDULE_DATA = [
         day: 'Fri',
         items: [
             { name: 'Contest', time: '9:00 AM - 12:00 PM', color: 'white', start: 9 * 60, duration: 180 },
-            { name: 'Lunch', time: '12:00 - 1:00', color: 'yellow', start: 12 * 60, duration: 60 },
-            { name: 'Minor', time: '2:30 - 3:20', room: 'A410', color: 'pink', start: 14 * 60 + 30, duration: 50 }
+            { name: 'Lunch', time: '12:00 PM - 1:00 PM', color: 'yellow', start: 12 * 60, duration: 60 },
+            { name: 'Minor', time: '2:30 PM - 3:20 PM', room: 'A410', color: 'pink', start: 14 * 60 + 30, duration: 50 }
         ]
     }
 ];
@@ -129,7 +129,7 @@ function TimetableView() {
                                     className="time-marker"
                                     style={{ left: `${pos}%` }}
                                 >
-                                    {slot}
+                                    {slot.split(':')[0] >= 9 && slot.split(':')[0] < 12 ? `${slot} AM` : `${slot} PM`}
                                 </div>
                             );
                         })}

@@ -259,7 +259,7 @@ const LiveLectureStatus = ({ tasks }) => {
     const [currentTime, setCurrentTime] = React.useState(new Date());
 
     React.useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date()), 1000 * 60); // Update every minute
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000); // Update every second
         return () => clearInterval(timer);
     }, []);
 
@@ -267,13 +267,27 @@ const LiveLectureStatus = ({ tasks }) => {
     const nextLecture = useMemo(() => getNextLecture(currentTime), [currentTime]);
     const pendingLectures = useMemo(() => getPendingLectures(currentTime, tasks), [currentTime, tasks]);
 
-    const formatMinutes = (minutes) => {
-        const hours = Math.floor(minutes / 60);
-        const mins = minutes % 60;
-        if (hours > 0) {
-            return `${hours}h ${mins}m`;
+    const formatTimeRemaining = (minutes) => {
+        if (minutes === undefined || minutes === null) return '';
+
+        // Calculate total seconds based on the fact that 'minutes' is (TargetTime - CurrentMinutes)
+        // So basic minutes result implies we are at 0 seconds of current minute.
+        // We need to subtract current seconds to get precise countdown.
+        const secondsPassedInMinute = currentTime.getSeconds();
+        const totalSeconds = minutes * 60 - secondsPassedInMinute;
+
+        if (totalSeconds <= 0) return '0m 0s';
+
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        const s = totalSeconds % 60;
+
+        const sStr = s.toString().padStart(2, '0');
+
+        if (h > 0) {
+            return `${h}h ${m}m ${sStr}s`;
         }
-        return `${mins}m`;
+        return `${m}m ${sStr}s`;
     };
 
     if (!currentLecture && !nextLecture && pendingLectures.length === 0) {
@@ -309,7 +323,7 @@ const LiveLectureStatus = ({ tasks }) => {
                             {currentLecture.name}
                         </div>
                         <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                            {currentLecture.room} • Ends in {formatMinutes(currentLecture.minutesRemaining)}
+                            {currentLecture.room} • Ends in {formatTimeRemaining(currentLecture.minutesRemaining)}
                         </div>
                     </div>
                 )}
@@ -335,7 +349,7 @@ const LiveLectureStatus = ({ tasks }) => {
                             {nextLecture.name}
                         </div>
                         <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                            {nextLecture.room} • Starts in {formatMinutes(nextLecture.minutesUntil)}
+                            {nextLecture.room} • Starts in {formatTimeRemaining(nextLecture.minutesUntil)}
                         </div>
                     </div>
                 )}

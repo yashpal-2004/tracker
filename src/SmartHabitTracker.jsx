@@ -26,6 +26,8 @@ import {
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -110,6 +112,7 @@ const SmartHabitTracker = () => {
   const [userStats, setUserStats] = useState({ xp: 0, badges: {}, completedDates: {}, dailyWorkLog: {} });
   const [rewardToast, setRewardToast] = useState(null);
   const [sortBy, setSortBy] = useState('category'); // 'category' | 'priority' | 'name'
+  const [detailHabit, setDetailHabit] = useState(null);
 
   // Hourly check for day change
   useEffect(() => {
@@ -216,8 +219,8 @@ const SmartHabitTracker = () => {
     e.preventDefault();
     if (!extraWorkData.description.trim() || !selectedHabitForExtra) return;
 
-    const xpTable = { '30m': 20, '1h': 50, '2h': 120, '4h': 300 };
-    const xpBonus = xpTable[extraWorkData.duration] || 50;
+    const xpTable = { '30m': 20, '1h': 40, '2h': 70, '4h': 100 };
+    const xpBonus = xpTable[extraWorkData.duration] || 40;
     const logDate = extraWorkData.logDate || currentDate;
     const statsRef = doc(db, 'userStats', 'global');
 
@@ -326,6 +329,50 @@ const SmartHabitTracker = () => {
     }
   };
 
+  const migratePastXP = async () => {
+    if (!window.confirm("This will update all past extra work entries to the new XP standards and recalculate your total XP. Continue?")) return;
+
+    const statsRef = doc(db, 'userStats', 'global');
+    const xpTable = { '30m': 20, '1h': 40, '2h': 70, '4h': 100 };
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const statsDoc = await transaction.get(statsRef);
+        if (!statsDoc.exists()) return;
+
+        const data = statsDoc.data();
+        const oldLog = data.extraWorkLog || {};
+        let newXpTotal = data.xp || 0;
+        const updatedLog = {};
+        let changedTotal = false;
+
+        Object.entries(oldLog).forEach(([date, entries]) => {
+          updatedLog[date] = entries.map(entry => {
+            const newXp = xpTable[entry.duration] || entry.xpAwarded;
+            if (newXp !== entry.xpAwarded) {
+              newXpTotal += (newXp - entry.xpAwarded);
+              changedTotal = true;
+              return { ...entry, xpAwarded: newXp };
+            }
+            return entry;
+          });
+        });
+
+        if (changedTotal) {
+          transaction.update(statsRef, {
+            xp: newXpTotal,
+            extraWorkLog: updatedLog
+          });
+        }
+      });
+      setRewardToast({ message: "Past entries updated to new standards!", type: 'xp' });
+      setTimeout(() => setRewardToast(null), 3000);
+    } catch (err) {
+      console.error("Migration failed:", err);
+      alert("Migration failed. See console for details.");
+    }
+  };
+
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) return;
@@ -425,6 +472,7 @@ const SmartHabitTracker = () => {
 
     return { currentStreak: current, longestStreak: longest };
   };
+
 
   const handleUpdateSubmit = async (e) => {
     e.preventDefault();
@@ -590,11 +638,36 @@ const SmartHabitTracker = () => {
         ? manualTarget
         : getDefaultMonthlyTarget(h.allowExtraWork ?? true, h.activeDays ?? [0, 1, 2, 3, 4, 5, 6], viewDate);
 
+      // Expected XP till today
+      const today = new Date();
+      const isPastMonth = viewDate.getFullYear() < today.getFullYear() || (viewDate.getFullYear() === today.getFullYear() && viewDate.getMonth() < today.getMonth());
+      const isCurrentMonth = viewDate.getFullYear() === today.getFullYear() && viewDate.getMonth() === today.getMonth();
+
+      let monthExpected = 0;
+      if (isPastMonth) {
+        monthExpected = thisMonthTarget;
+      } else if (isCurrentMonth) {
+        let activeTillToday = 0;
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth();
+        const currentDay = today.getDate();
+
+        for (let d = 1; d <= currentDay; d++) {
+          if ((h.activeDays || [0, 1, 2, 3, 4, 5, 6]).includes(new Date(currentYear, currentMonth, d).getDay())) {
+            activeTillToday++;
+          }
+        }
+        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+        const expectedExtra = (h.allowExtraWork ?? true) ? Math.floor((currentDay / daysInMonth) * 100) : 0;
+        monthExpected = (activeTillToday * 10) + expectedExtra;
+      }
+
       map[h.id] = {
         base: history.length * 10,
         extra: 0,
         monthTotal: monthHistory.length * 10,
-        monthTarget: thisMonthTarget
+        monthTarget: thisMonthTarget,
+        monthExpected: monthExpected
       };
     });
 
@@ -623,6 +696,11 @@ const SmartHabitTracker = () => {
 
     let totalTarget = 0;
     let totalBaseXP = 0;
+    let totalExpected = 0;
+
+    const today = new Date();
+    const isPast = d.getFullYear() < today.getFullYear() || (d.getFullYear() === today.getFullYear() && d.getMonth() < today.getMonth());
+    const isCurrent = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth();
 
     habits.forEach(h => {
       // Target for selected month
@@ -635,6 +713,23 @@ const SmartHabitTracker = () => {
       const history = h.history || [];
       const monthHistory = history.filter(dateStr => dateStr.startsWith(monthPrefix));
       totalBaseXP += monthHistory.length * 10;
+
+      // Expected XP calc
+      let hExpected = 0;
+      if (isPast) {
+        hExpected = t;
+      } else if (isCurrent) {
+        let activeTillToday = 0;
+        for (let day = 1; day <= today.getDate(); day++) {
+          if ((h.activeDays || [0, 1, 2, 3, 4, 5, 6]).includes(new Date(today.getFullYear(), today.getMonth(), day).getDay())) {
+            activeTillToday++;
+          }
+        }
+        const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+        const expectedExtra = (h.allowExtraWork ?? true) ? Math.floor((today.getDate() / daysInMonth) * 100) : 0;
+        hExpected = (activeTillToday * 10) + expectedExtra;
+      }
+      totalExpected += hExpected;
     });
 
     let totalExtraXP = 0;
@@ -649,7 +744,7 @@ const SmartHabitTracker = () => {
     });
 
     const totalEarned = totalBaseXP + totalExtraXP;
-    return { totalTarget, totalEarned, monthName, extraWorkCount, totalExtraXP };
+    return { totalTarget, totalEarned, monthName, extraWorkCount, totalExtraXP, totalExpected };
   }, [habits, userStats.extraWorkLog, collectiveDate]);
 
   const todayStats = useMemo(() => {
@@ -674,17 +769,49 @@ const SmartHabitTracker = () => {
             {habitXpMap[habit.id]?.monthTarget > 0 && (
               <div className="monthly-target-info">
                 <div className="target-progress-row">
-                  <span className="target-val">
-                    {habitViewDates[habit.id]?.toLocaleString('default', { month: 'short' }) || new Date().toLocaleString('default', { month: 'short' })} Target: {habitXpMap[habit.id]?.monthTotal || 0} / {habitXpMap[habit.id]?.monthTarget} XP
+                  <span className="target-val" style={{ display: 'flex', alignItems: 'baseline', gap: '4px', flexWrap: 'wrap' }}>
+                    {habitViewDates[habit.id]?.toLocaleString('default', { month: 'short' }) || new Date().toLocaleString('default', { month: 'short' })}: {habitXpMap[habit.id]?.monthTotal || 0} / {habitXpMap[habit.id]?.monthTarget} XP
                   </span>
                   <span className="target-pct">{Math.floor(((habitXpMap[habit.id]?.monthTotal || 0) / habitXpMap[habit.id]?.monthTarget) * 100)}%</span>
                 </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                    Expected: {habitXpMap[habit.id]?.monthExpected || 0} XP
+                  </div>
+                  {(() => {
+                    const diff = (habitXpMap[habit.id]?.monthTotal || 0) - (habitXpMap[habit.id]?.monthExpected || 0);
+                    return (
+                      <div style={{
+                        fontSize: '0.65rem',
+                        fontWeight: 800,
+                        color: diff >= 0 ? '#10b981' : '#f59e0b',
+                        padding: '2px 6px',
+                        background: diff >= 0 ? '#f0fdf4' : '#fffbeb',
+                        borderRadius: '4px'
+                      }}>
+                        {diff >= 0 ? `Ahead by ${diff}` : `Behind by ${Math.abs(diff)}`} XP
+                      </div>
+                    );
+                  })()}
+                </div>
+
                 <div className="target-mini-bar">
+                  <div
+                    className="target-expected-fill"
+                    style={{ width: `${Math.min(100, ((habitXpMap[habit.id]?.monthExpected || 0) / habitXpMap[habit.id]?.monthTarget) * 100)}%` }}
+                  />
+                  <div
+                    className="target-expected-indicator"
+                    style={{ left: `${Math.min(100, ((habitXpMap[habit.id]?.monthExpected || 0) / habitXpMap[habit.id]?.monthTarget) * 100)}%` }}
+                  />
                   <div
                     className="target-mini-fill"
                     style={{
                       width: `${Math.min(100, ((habitXpMap[habit.id]?.monthTotal || 0) / habitXpMap[habit.id]?.monthTarget) * 100)}%`,
-                      backgroundColor: habit.color
+                      backgroundColor: habit.color,
+                      position: 'relative',
+                      zIndex: 2
                     }}
                   />
                 </div>
@@ -710,6 +837,9 @@ const SmartHabitTracker = () => {
                 <Zap size={16} style={{ color: habit.color }} />
               </button>
             )}
+            <button className="action-btn" onClick={() => setDetailHabit(habit)} title="View Detailed Analytics">
+              <TrendingUp size={16} />
+            </button>
             <button className="action-btn" onClick={() => {
               const viewDate = habitViewDates[habit.id] || new Date();
               setEditingTargetMonthInfo({
@@ -729,10 +859,10 @@ const SmartHabitTracker = () => {
                 manualTargets: habit.manualTargets || {}
               });
               setShowAddModal(true);
-            }}>
+            }} title="Edit Habit">
               <Edit2 size={16} />
             </button>
-            <button className="action-btn" onClick={() => deleteHabit(habit.id)}>
+            <button className="action-btn" onClick={() => deleteHabit(habit.id)} title="Delete Habit">
               <Trash2 size={16} />
             </button>
           </div>
@@ -883,22 +1013,54 @@ const SmartHabitTracker = () => {
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '6px' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-              <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)' }}>{currentMonthStats.totalEarned}</span>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>/ {currentMonthStats.totalTarget} XP</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)' }}>{currentMonthStats.totalEarned}</span>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>/ {currentMonthStats.totalTarget} XP</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  Expected: {currentMonthStats.totalExpected} XP
+                </div>
+                {(() => {
+                  const diff = currentMonthStats.totalEarned - currentMonthStats.totalExpected;
+                  return (
+                    <div style={{
+                      fontSize: '0.7rem',
+                      fontWeight: 800,
+                      color: diff >= 0 ? '#10b981' : '#f59e0b',
+                      padding: '1px 6px',
+                      background: diff >= 0 ? '#f0fdf4' : '#fffbeb',
+                      borderRadius: '4px'
+                    }}>
+                      {diff >= 0 ? `Ahead by ${diff}` : `Behind by ${Math.abs(diff)}`} XP
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
-            <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--primary)' }}>
+            <span style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--primary)' }}>
               {currentMonthStats.totalTarget > 0 ? Math.floor((currentMonthStats.totalEarned / currentMonthStats.totalTarget) * 100) : 0}%
             </span>
           </div>
 
-          <div className="target-mini-bar" style={{ height: '8px', background: '#f1f5f9' }}>
+          <div className="target-mini-bar" style={{ height: '8px', background: '#f1f5f9', marginTop: '4px' }}>
+            <div
+              className="target-expected-fill"
+              style={{ width: `${currentMonthStats.totalTarget > 0 ? Math.min(100, (currentMonthStats.totalExpected / currentMonthStats.totalTarget) * 100) : 0}%` }}
+            />
+            <div
+              className="target-expected-indicator"
+              style={{ left: `${currentMonthStats.totalTarget > 0 ? Math.min(100, (currentMonthStats.totalExpected / currentMonthStats.totalTarget) * 100) : 0}%`, height: '100%' }}
+            />
             <div
               className="target-mini-fill"
               style={{
                 width: `${currentMonthStats.totalTarget > 0 ? Math.min(100, (currentMonthStats.totalEarned / currentMonthStats.totalTarget) * 100) : 0}%`,
                 backgroundColor: 'var(--primary)',
-                borderRadius: '10px'
+                borderRadius: '10px',
+                position: 'relative',
+                zIndex: 2
               }}
             />
           </div>
@@ -994,12 +1156,42 @@ const SmartHabitTracker = () => {
         )}
       </div>
 
+      {detailHabit && (
+        <HabitDetailAnalyticsModal
+          habit={detailHabit}
+          userStats={userStats}
+          xpStats={habitXpMap[detailHabit.id]}
+          onClose={() => setDetailHabit(null)}
+        />
+      )}
+
       <HabitAnalytics habits={habits} userStats={userStats} />
 
       <div className="extra-work-history-section glass" style={{ marginTop: '32px', padding: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-          <Briefcase className="text-indigo-600" />
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Extra Grind History</h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <Briefcase className="text-indigo-600" />
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Extra Grind History</h3>
+          </div>
+          <button
+            onClick={migratePastXP}
+            style={{
+              fontSize: '0.75rem',
+              padding: '6px 12px',
+              background: '#f1f5f9',
+              borderRadius: '8px',
+              color: '#64748b',
+              fontWeight: 700,
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseOver={e => e.currentTarget.style.background = '#e2e8f0'}
+            onMouseOut={e => e.currentTarget.style.background = '#f1f5f9'}
+            title="Recalculate all past XP to match current standards"
+          >
+            Update Past XP to Standards
+          </button>
         </div>
         <div className="extra-work-list">
           {Object.entries(userStats.extraWorkLog || {})
@@ -1305,9 +1497,9 @@ const SmartHabitTracker = () => {
                   <div className="intensity-selector">
                     {[
                       { val: '30m', label: 'Light', xp: '+20' },
-                      { val: '1h', label: 'Deep', xp: '+50' },
-                      { val: '2h', label: 'Power', xp: '+120' },
-                      { val: '4h', label: 'Grit', xp: '+300' }
+                      { val: '1h', label: 'Deep', xp: '+40' },
+                      { val: '2h', label: 'Power', xp: '+70' },
+                      { val: '4h', label: 'Grit', xp: '+100' }
                     ].map(level => (
                       <button
                         key={level.val}
@@ -1408,7 +1600,7 @@ const HabitTrendChart = ({ history, color, habitId, userStats }) => {
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <Area
-            type="monotone"
+            type="linear"
             dataKey="completed"
             stroke={color}
             fill={color}
@@ -1418,7 +1610,7 @@ const HabitTrendChart = ({ history, color, habitId, userStats }) => {
           />
           {/* Use extraWork as a point indicator with custom Flame badge */}
           <Line
-            type="monotone"
+            type="linear"
             dataKey="extraWork"
             stroke="#ef4444"
             strokeWidth={0}
@@ -1546,16 +1738,14 @@ const HabitCalendar = ({ history, reflections, color, onToggleDate, onAddReflect
 
 const HabitAnalytics = ({ habits, userStats }) => {
   const [period, setPeriod] = useState(7); // default 7 days
+  const [chartType, setChartType] = useState('area'); // 'area' | 'bar' | 'line'
 
   const data = useMemo(() => {
-    // Determine how many days to show
     let daysToShow = period;
-
-    // If "All", find the earliest habit creation date
     if (period === 'all') {
       const earliest = habits.reduce((acc, h) => Math.min(acc, h.createdAt || Date.now()), Date.now());
       daysToShow = Math.ceil((Date.now() - earliest) / (1000 * 60 * 60 * 24)) + 1;
-      daysToShow = Math.max(daysToShow, 7); // Show at least 7 days
+      daysToShow = Math.max(daysToShow, 7);
     }
 
     const result = [];
@@ -1568,8 +1758,6 @@ const HabitAnalytics = ({ habits, userStats }) => {
       let label;
       if (daysToShow <= 14) {
         label = d.toLocaleDateString('default', { weekday: 'short' });
-      } else if (daysToShow <= 60) {
-        label = d.toLocaleDateString('default', { month: 'short', day: 'numeric' });
       } else {
         label = d.toLocaleDateString('default', { month: 'short', day: 'numeric' });
       }
@@ -1589,91 +1777,484 @@ const HabitAnalytics = ({ habits, userStats }) => {
 
   if (habits.length === 0) return null;
 
+  const renderChart = () => {
+    const commonProps = {
+      data,
+      margin: { top: 10, right: 10, left: -20, bottom: 0 }
+    };
+
+    const gradientDef = (
+      <defs>
+        <linearGradient id="colorComp" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4} />
+          <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient id="colorExtra" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4} />
+          <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+    );
+
+    const cartesianGrid = <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />;
+    const xAxis = (
+      <XAxis
+        dataKey="name"
+        axisLine={false}
+        tickLine={false}
+        tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+        interval={period === 'all' ? Math.floor(data.length / 10) : (period > 14 ? 2 : 0)}
+      />
+    );
+    const yAxisLeft = <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700, fill: '#4f46e5' }} />;
+    const yAxisRight = <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700, fill: '#f59e0b' }} />;
+
+    const tooltip = (
+      <Tooltip
+        contentStyle={{
+          borderRadius: '16px',
+          border: 'none',
+          boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+          padding: '12px'
+        }}
+        itemStyle={{ fontWeight: 800, fontSize: '0.85rem' }}
+        labelStyle={{ fontWeight: 900, marginBottom: '6px', color: '#1e293b' }}
+        labelFormatter={(value, payload) => payload[0]?.payload.fullDate || value}
+      />
+    );
+
+    if (chartType === 'bar') {
+      return (
+        <BarChart {...commonProps}>
+          {cartesianGrid}
+          {xAxis}
+          {yAxisLeft}
+          {yAxisRight}
+          {tooltip}
+          <Bar
+            yAxisId="left"
+            dataKey="completed"
+            fill="#4f46e5"
+            radius={[6, 6, 0, 0]}
+            name="Habits Done"
+            barSize={24}
+          />
+          <Bar
+            yAxisId="right"
+            dataKey="extraXP"
+            fill="#f59e0b"
+            radius={[6, 6, 0, 0]}
+            name="Extra XP"
+            barSize={24}
+          />
+        </BarChart>
+      );
+    }
+
+    if (chartType === 'line') {
+      return (
+        <LineChart {...commonProps}>
+          {cartesianGrid}
+          {xAxis}
+          {yAxisLeft}
+          {yAxisRight}
+          {tooltip}
+          <Line
+            yAxisId="left"
+            type="linear"
+            dataKey="completed"
+            stroke="#4f46e5"
+            strokeWidth={5}
+            dot={{ r: 5, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
+            activeDot={{ r: 7, strokeWidth: 0 }}
+            name="Habits Done"
+          />
+          <Line
+            yAxisId="right"
+            type="linear"
+            dataKey="extraXP"
+            stroke="#f59e0b"
+            strokeWidth={3}
+            dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }}
+            activeDot={{ r: 6, strokeWidth: 0 }}
+            name="Extra XP"
+          />
+        </LineChart>
+      );
+    }
+
+    // Default: Area Chart
+    return (
+      <AreaChart {...commonProps}>
+        {gradientDef}
+        {cartesianGrid}
+        {xAxis}
+        {yAxisLeft}
+        {yAxisRight}
+        {tooltip}
+        <Area
+          yAxisId="left"
+          type="linear"
+          dataKey="completed"
+          stroke="#4f46e5"
+          strokeWidth={5}
+          fillOpacity={1}
+          fill="url(#colorComp)"
+          name="Habits Done"
+        />
+        <Area
+          yAxisId="right"
+          type="linear"
+          dataKey="extraXP"
+          stroke="#f59e0b"
+          strokeWidth={3}
+          fillOpacity={1}
+          fill="url(#colorExtra)"
+          name="Extra XP"
+        />
+      </AreaChart>
+    );
+  };
+
   return (
-    <div className="analytics-section glass" style={{ marginTop: '32px', padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <BarChart2 className="text-indigo-600" />
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Completion Trends</h3>
+    <div className="analytics-section glass" style={{ marginTop: '32px', padding: '32px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', flexWrap: 'wrap', gap: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ padding: '10px', background: 'var(--primary-glow)', borderRadius: '14px' }}>
+            <BarChart2 className="text-indigo-600" size={24} />
+          </div>
+          <div>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 900, margin: 0 }}>Progress Analytics</h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>Visualize your habit consistency</p>
+          </div>
         </div>
 
-        <div className="filter-group glass" style={{ display: 'flex', gap: '4px', padding: '4px', borderRadius: '10px', background: '#f1f5f9' }}>
-          {[
-            { label: 'Week', val: 7 },
-            { label: 'Month', val: 30 },
-            { label: 'All-Time', val: 'all' }
-          ].map(p => (
-            <button
-              key={p.label}
-              onClick={() => setPeriod(p.val)}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '8px',
-                fontSize: '0.8rem',
-                fontWeight: 700,
-                background: period === p.val ? 'white' : 'transparent',
-                color: period === p.val ? 'var(--primary)' : 'var(--text-muted)',
-                boxShadow: period === p.val ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
-                transition: 'var(--transition)'
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <div className="glass" style={{ display: 'flex', gap: '4px', padding: '5px', borderRadius: '12px', background: '#f8fafc' }}>
+            {[
+              { id: 'area', icon: <Activity size={16} /> },
+              { id: 'bar', icon: <BarChart2 size={16} /> },
+              { id: 'line', icon: <TrendingUp size={16} /> }
+            ].map(type => (
+              <button
+                key={type.id}
+                onClick={() => setChartType(type.id)}
+                style={{
+                  padding: '8px',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: chartType === type.id ? 'white' : 'transparent',
+                  color: chartType === type.id ? 'var(--primary)' : '#94a3b8',
+                  boxShadow: chartType === type.id ? '0 4px 6px -1px rgba(0,0,0,0.1)' : 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {type.icon}
+              </button>
+            ))}
+          </div>
+
+          <div className="glass" style={{ display: 'flex', gap: '4px', padding: '5px', borderRadius: '12px', background: '#f8fafc' }}>
+            {[
+              { label: 'Week', val: 7 },
+              { label: 'Month', val: 30 },
+              { label: 'All', val: 'all' }
+            ].map(p => (
+              <button
+                key={p.label}
+                onClick={() => setPeriod(p.val)}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  background: period === p.val ? 'white' : 'transparent',
+                  color: period === p.val ? 'var(--primary)' : '#94a3b8',
+                  boxShadow: period === p.val ? '0 4px 6px -1px rgba(0,0,0,0.1)' : 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div style={{ height: '300px', width: '100%' }}>
+      <div style={{ height: '320px', width: '100%', padding: '0 10px' }}>
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data}>
-            <defs>
-              <linearGradient id="colorComp" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-            <XAxis
-              dataKey="name"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 10, fontWeight: 600, fill: '#64748b' }}
-              interval={period === 'all' ? Math.floor(data.length / 10) : 0}
-            />
-            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 600, fill: '#64748b' }} />
-            <Area
-              yAxisId="left"
-              type="monotone"
-              dataKey="completed"
-              stroke="#4f46e5"
-              strokeWidth={3}
-              fillOpacity={1}
-              fill="url(#colorComp)"
-              name="Habits Done"
-            />
-            <Area
-              yAxisId="right"
-              type="monotone"
-              dataKey="extraXP"
-              stroke="#f59e0b"
-              strokeWidth={2}
-              fill="#f59e0b"
-              fillOpacity={0.1}
-              name="Extra XP"
-            />
-            <XAxis dataKey="name" hide />
-            <YAxis yAxisId="left" hide />
-            <YAxis yAxisId="right" hide />
-            <Tooltip
-              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-              labelStyle={{ fontWeight: 800, marginBottom: '4px' }}
-              labelFormatter={(value, payload) => payload[0]?.payload.fullDate || value}
-            />
-          </AreaChart>
+          {renderChart()}
         </ResponsiveContainer>
       </div>
     </div>
   );
 };
 
-export default SmartHabitTracker;
+const HabitDetailAnalyticsModal = ({ habit, userStats, xpStats, onClose }) => {
+  const [period, setPeriod] = useState(30);
+  const [chartType, setChartType] = useState('area');
+
+  const data = useMemo(() => {
+    let daysToShow = period;
+    if (period === 'all') {
+      const earliest = habit.createdAt || Date.now();
+      daysToShow = Math.ceil((Date.now() - earliest) / (1000 * 60 * 60 * 24)) + 1;
+      daysToShow = Math.max(daysToShow, 7);
+    }
+
+    const result = [];
+    for (let i = daysToShow - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toLocaleDateString('en-CA');
+      const isDone = (habit.history || []).includes(dateStr);
+
+      let label;
+      if (daysToShow <= 14) {
+        label = d.toLocaleDateString('default', { weekday: 'short' });
+      } else {
+        label = d.toLocaleDateString('default', { month: 'short', day: 'numeric' });
+      }
+
+      const extraXP = (userStats?.extraWorkLog?.[dateStr] || [])
+        .filter(entry => entry.habitId === habit.id)
+        .reduce((acc, entry) => acc + (entry.xpAwarded || 0), 0);
+
+      result.push({
+        name: label,
+        fullDate: dateStr,
+        completed: isDone ? 1 : 0,
+        extraXP: extraXP
+      });
+    }
+    return result;
+  }, [habit, period, userStats]);
+
+  const renderChart = () => {
+    const commonProps = {
+      data,
+      margin: { top: 10, right: 10, left: -20, bottom: 0 }
+    };
+
+    const gradientDef = (
+      <defs>
+        <linearGradient id="colorDetailComp" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor={habit.color} stopOpacity={0.4} />
+          <stop offset="95%" stopColor={habit.color} stopOpacity={0} />
+        </linearGradient>
+        <linearGradient id="colorDetailExtra" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4} />
+          <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+    );
+
+    const cartesianGrid = <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />;
+    const xAxis = (
+      <XAxis
+        dataKey="name"
+        axisLine={false}
+        tickLine={false}
+        tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+        interval={period === 'all' ? Math.floor(data.length / 10) : (period > 14 ? 2 : 0)}
+      />
+    );
+    const yAxisLeft = <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700, fill: habit.color }} />;
+    const yAxisRight = <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 11, fontWeight: 700, fill: '#f59e0b' }} />;
+
+    const tooltip = (
+      <Tooltip
+        contentStyle={{
+          borderRadius: '16px',
+          border: 'none',
+          boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+          padding: '12px'
+        }}
+        itemStyle={{ fontWeight: 800, fontSize: '0.85rem' }}
+        labelStyle={{ fontWeight: 900, marginBottom: '6px', color: '#1e293b' }}
+        labelFormatter={(value, payload) => payload[0]?.payload.fullDate || value}
+      />
+    );
+
+    if (chartType === 'bar') {
+      return (
+        <BarChart {...commonProps}>
+          {cartesianGrid}
+          {xAxis}
+          {yAxisLeft}
+          {yAxisRight}
+          {tooltip}
+          <Bar yAxisId="left" dataKey="completed" fill={habit.color} radius={[6, 6, 0, 0]} name="Done" barSize={24} />
+          <Bar yAxisId="right" dataKey="extraXP" fill="#f59e0b" radius={[6, 6, 0, 0]} name="Extra XP" barSize={24} />
+        </BarChart>
+      );
+    }
+
+    if (chartType === 'line') {
+      return (
+        <LineChart {...commonProps}>
+          {cartesianGrid}
+          {xAxis}
+          {yAxisLeft}
+          {yAxisRight}
+          {tooltip}
+          <Line yAxisId="left" type="linear" dataKey="completed" stroke={habit.color} strokeWidth={5} dot={{ r: 5, fill: habit.color, strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, strokeWidth: 0 }} name="Done" />
+          <Line yAxisId="right" type="linear" dataKey="extraXP" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} name="Extra XP" />
+        </LineChart>
+      );
+    }
+
+    return (
+      <AreaChart {...commonProps}>
+        {gradientDef}
+        {cartesianGrid}
+        {xAxis}
+        {yAxisLeft}
+        {yAxisRight}
+        {tooltip}
+        <Area yAxisId="left" type="linear" dataKey="completed" stroke={habit.color} strokeWidth={5} fillOpacity={1} fill="url(#colorDetailComp)" name="Done" />
+        <Area yAxisId="right" type="linear" dataKey="extraXP" stroke="#f59e0b" strokeWidth={3} fillOpacity={1} fill="url(#colorDetailExtra)" name="Extra XP" />
+      </AreaChart>
+    );
+  };
+
+  return (
+    <div className="habit-modal-overlay">
+      <div className="habit-modal detail-chart-modal" style={{ maxWidth: '800px', width: '95%' }}>
+        <div className="modal-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ padding: '10px', background: `${habit.color}15`, borderRadius: '14px' }}>
+              <TrendingUp style={{ color: habit.color }} size={24} />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', margin: 0 }}>{habit.name}</h2>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>Consistency & Performance History</p>
+            </div>
+          </div>
+          <button className="action-btn" onClick={onClose}><X size={24} /></button>
+        </div>
+
+        {xpStats && xpStats.monthTarget > 0 && (
+          <div className="glass" style={{ margin: '20px 0', padding: '16px', borderRadius: '16px', background: '#f8fafc' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                <span style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-main)' }}>{xpStats.monthTotal}</span>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 700 }}>/ {xpStats.monthTarget} XP This Month</span>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '1.2rem', fontWeight: 900, color: habit.color }}>
+                  {Math.floor((xpStats.monthTotal / xpStats.monthTarget) * 100)}%
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                Expected: {xpStats.monthExpected} XP
+              </div>
+              {(() => {
+                const diff = xpStats.monthTotal - xpStats.monthExpected;
+                return (
+                  <div style={{
+                    fontSize: '0.8rem',
+                    fontWeight: 900,
+                    color: diff >= 0 ? '#10b981' : '#f59e0b',
+                    padding: '2px 8px',
+                    background: diff >= 0 ? '#f0fdf4' : '#fffbeb',
+                    borderRadius: '6px'
+                  }}>
+                    {diff >= 0 ? `Ahead by ${diff}` : `Behind by ${Math.abs(diff)}`} XP
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="target-mini-bar" style={{ height: '8px', background: '#e2e8f0', marginTop: '12px' }}>
+              <div
+                className="target-expected-fill"
+                style={{ width: `${Math.min(100, (xpStats.monthExpected / xpStats.monthTarget) * 100)}%` }}
+              />
+              <div
+                className="target-mini-fill"
+                style={{
+                  width: `${Math.min(100, (xpStats.monthTotal / xpStats.monthTarget) * 100)}%`,
+                  backgroundColor: habit.color,
+                  borderRadius: '10px'
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginBottom: '20px' }}>
+          <div className="glass" style={{ display: 'flex', gap: '4px', padding: '5px', borderRadius: '12px', background: '#f8fafc' }}>
+            {[
+              { id: 'area', icon: <Activity size={16} /> },
+              { id: 'bar', icon: <BarChart2 size={16} /> },
+              { id: 'line', icon: <TrendingUp size={16} /> }
+            ].map(type => (
+              <button
+                key={type.id}
+                onClick={() => setChartType(type.id)}
+                style={{
+                  padding: '8px',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: chartType === type.id ? 'white' : 'transparent',
+                  color: chartType === type.id ? habit.color : '#94a3b8',
+                  boxShadow: chartType === type.id ? '0 4px 6px -1px rgba(0,0,0,0.1)' : 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {type.icon}
+              </button>
+            ))}
+          </div>
+
+          <div className="glass" style={{ display: 'flex', gap: '4px', padding: '5px', borderRadius: '12px', background: '#f8fafc' }}>
+            {[
+              { label: 'Week', val: 7 },
+              { label: 'Month', val: 30 },
+              { label: 'All', val: 'all' }
+            ].map(p => (
+              <button
+                key={p.label}
+                onClick={() => setPeriod(p.val)}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  background: period === p.val ? 'white' : 'transparent',
+                  color: period === p.val ? habit.color : '#94a3b8',
+                  boxShadow: period === p.val ? '0 4px 6px -1px rgba(0,0,0,0.1)' : 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ height: '350px', width: '100%' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            {renderChart()}
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default SmartHabitTracker
