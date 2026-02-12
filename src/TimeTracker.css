@@ -252,6 +252,32 @@
     box-shadow: none !important;
 }
 
+.timeline-date-input {
+    border: none;
+    background: transparent;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #475569;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    padding: 0 4px;
+    width: 120px;
+    position: relative;
+}
+
+.timeline-date-input::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    background: transparent;
+    color: transparent;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    opacity: 0;
+}
+
 /* Picker Group in Analytics */
 .picker-group {
     display: flex;
@@ -1032,6 +1058,20 @@
     gap: 6px;
 }
 
+@media (max-width: 1024px) {
+    .stats-grid {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    }
+
+    .timeline-section-layout {
+        flex-direction: column !important;
+    }
+
+    .distribution-column {
+        width: 100% !important;
+    }
+}
+
 @media (max-width: 768px) {
     .stats-grid {
         grid-template-columns: 1fr;
@@ -1047,4 +1087,80 @@
         gap: 16px;
         align-items: flex-start;
     }
+}
+
+/* Timeline and Distribution Layout */
+.timeline-section-layout {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+}
+
+.timeline-column {
+    flex: 1;
+    min-width: 0;
+}
+
+.distribution-column {
+    width: 350px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 24px;
+}
+
+.distribution-card {
+    padding: 24px;
+    background: #fdfdfd;
+    border: 1px solid #eef2f6;
+    border-radius: 28px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.02);
+}
+
+.dist-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 20px;
+}
+
+.dist-header svg {
+    color: var(--primary);
+}
+
+.mini-legend {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.mini-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.lg-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.mini-legend-item span {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.day-distribution-chart-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }

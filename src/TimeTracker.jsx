@@ -63,12 +63,12 @@ const CATEGORY_COLORS = {
     'Work': '#b45309',     // Dark Amber
     'Waste': '#b91c1c',    // Dark Red
     'Meal': '#059669',     // Emerald Green
-    'Cooking': '#be185d',  // Pink/Rose
-    'Personal': '#6b21a8', // Rich Purple
+    'Health': '#e11d48',    // Vibrant Rose/Red
+    'Miscellaneous': '#6b21a8', // Rich Purple
     'Social': '#a21caf',   // Deep Fuchsia
     'Sleep': '#1d4ed8',    // Royal Blue
     'Break': '#0891b2',    // Teal/Cyan
-    'Other': '#64748b'     // Mid Slate
+    'Untracked': '#94a3b8' // Mid Slate for gap time
 };
 
 const formatTime12 = (time24) => {
@@ -106,7 +106,9 @@ const DayTimeline = ({ sessions }) => {
                         let end = timeToPercent(session.endTime);
                         let height = end - start;
 
-                        if (height < 0) height = (100 - start) + end; // Cross midnight
+                        // Height should already be handled by splitting in timelineSessions,
+                        // but we keep this as a safety fallback for single-day renders.
+                        if (height < 0) height = (100 - start) + end;
 
                         return (
                             <div
@@ -132,6 +134,88 @@ const DayTimeline = ({ sessions }) => {
     );
 };
 
+const DayDistributionChart = ({ stats }) => {
+    if (!stats) return null;
+
+    const categories = [
+        { key: 'Study', name: 'Study', color: CATEGORY_COLORS.Study },
+        { key: 'Work', name: 'Work', color: CATEGORY_COLORS.Work },
+        { key: 'Waste', name: 'Waste', color: CATEGORY_COLORS.Waste },
+        { key: 'Meal', name: 'Meal', color: CATEGORY_COLORS.Meal },
+        { key: 'Health', name: 'Health', color: CATEGORY_COLORS.Health },
+        { key: 'Miscellaneous', name: 'Misc', color: CATEGORY_COLORS.Miscellaneous },
+        { key: 'Social', name: 'Social', color: CATEGORY_COLORS.Social },
+        { key: 'Sleep', name: 'Sleep', color: CATEGORY_COLORS.Sleep },
+        { key: 'Break', name: 'Break', color: CATEGORY_COLORS.Break },
+    ];
+
+    const pieData = categories.map(cat => ({
+        name: cat.name,
+        value: parseFloat(stats[cat.key.toLowerCase()] || 0),
+        color: cat.color
+    })).filter(c => c.value > 0);
+
+    // Add Untracked time to the chart if it exists
+    const untrackedVal = parseFloat(stats.other || 0); // stats.other is the untracked duration
+    if (untrackedVal > 0) {
+        pieData.push({
+            name: 'Untracked',
+            value: untrackedVal,
+            color: CATEGORY_COLORS.Untracked
+        });
+    }
+
+    return (
+        <div className="day-distribution-chart-container">
+            <ResponsiveContainer width="100%" height={250}>
+                <PieChart>
+                    <defs>
+                        <filter id="shadow3d_mini" x="-20%" y="-20%" width="140%" height="140%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+                            <feOffset dx="1" dy="2" result="offsetblur" />
+                            <feComponentTransfer><feFuncA type="linear" slope="0.2" /></feComponentTransfer>
+                            <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+                        </filter>
+                    </defs>
+                    <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius="50%"
+                        outerRadius="75%"
+                        paddingAngle={4}
+                        dataKey="value"
+                        stroke="none"
+                        cornerRadius={6}
+                        style={{ filter: 'url(#shadow3d_mini)' }}
+                        labelLine={false}
+                        label={({ name, percent, x, y, cx }) => (
+                            <text
+                                x={x}
+                                y={y}
+                                fill="#475569"
+                                textAnchor={x > cx ? 'start' : 'end'}
+                                dominantBaseline="central"
+                                style={{ fontSize: '10px', fontWeight: 800 }}
+                            >
+                                {`${name}: ${(percent * 100).toFixed(0)}%`}
+                            </text>
+                        )}
+                    >
+                        {pieData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                    </Pie>
+                    <Tooltip
+                        contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', fontSize: '12px' }}
+                        formatter={(value) => [`${value}h`, 'Duration']}
+                    />
+                </PieChart>
+            </ResponsiveContainer>
+        </div>
+    );
+};
+
 const TimeTracker = () => {
     const [logs, setLogs] = useState([]);
     const [sleepLogs, setSleepLogs] = useState([]);
@@ -145,6 +229,7 @@ const TimeTracker = () => {
     const [filterCategory, setFilterCategory] = useState('All');
     const [statView, setStatView] = useState('month'); // 'all', 'month', 'week'
     const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
+    const [timelineDate, setTimelineDate] = useState(todayStr);
 
     // Suggestions & Custom Defaults
     const [customSuggestions, setCustomSuggestions] = useState(() => {
@@ -232,20 +317,16 @@ const TimeTracker = () => {
         const title = formData.title.trim().toLowerCase();
 
         // Manual override for common keywords
-        if (['breakfast', 'lunch', 'dinner', 'snacks', 'eating', 'meal'].some(k => title.includes(k))) {
+        if (['breakfast', 'lunch', 'dinner', 'snacks', 'eating', 'meal', 'cooking', 'making food', 'meal prep'].some(k => title.includes(k))) {
             setFormData(prev => ({ ...prev, category: 'Meal' }));
             return;
         }
-        if (['waste', 'scrolling', 'procrastination', 'reels', 'youtube'].some(k => title.includes(k))) {
-            setFormData(prev => ({ ...prev, category: 'Waste' }));
+        if (['gym', 'workout', 'exercise', 'self growth', 'growth', 'learning', 'self improvement'].some(k => title.includes(k))) {
+            setFormData(prev => ({ ...prev, category: 'Health' }));
             return;
         }
-        if (['cooking', 'making food', 'meal prep'].some(k => title.includes(k))) {
-            setFormData(prev => ({ ...prev, category: 'Cooking' }));
-            return;
-        }
-        if (['gym', 'workout', 'bathing', 'shower', 'exercise'].some(k => title.includes(k))) {
-            setFormData(prev => ({ ...prev, category: 'Personal' }));
+        if (['bathing', 'shower', 'ready', 'bath', 'fresh', 'freshen'].some(k => title.includes(k))) {
+            setFormData(prev => ({ ...prev, category: 'Miscellaneous' }));
             return;
         }
         if (['gf', 'talk', 'call', 'meeting', 'video call', 'talking'].some(k => title.includes(k))) {
@@ -394,12 +475,16 @@ const TimeTracker = () => {
             const date = log.date;
             if (!dailyData[date]) {
                 dailyData[date] = {
-                    Study: 0, Work: 0, Waste: 0, Meal: 0,
-                    Cooking: 0, Personal: 0, Sleep: 0, total: 0
+                    Study: 0, Work: 0, Waste: 0, Meal: 0, Social: 0,
+                    Health: 0, Miscellaneous: 0, Sleep: 0, Break: 0, total: 0
                 };
             }
-            if (dailyData[date].hasOwnProperty(log.category)) {
-                dailyData[date][log.category] += log.duration;
+            let category = log.category;
+            if (category === 'Cooking') category = 'Meal';
+            if (category === 'Personal' || category === 'Other') category = 'Miscellaneous';
+
+            if (dailyData[date].hasOwnProperty(category)) {
+                dailyData[date][category] += log.duration;
             }
             dailyData[date].total += log.duration;
         });
@@ -414,7 +499,7 @@ const TimeTracker = () => {
 
         // Prepare chart data based on view mode
         let chartData = [];
-        const categories = ['Study', 'Work', 'Waste', 'Meal', 'Cooking', 'Personal', 'Social', 'Sleep', 'Break', 'Other'];
+        const categories = ['Study', 'Work', 'Waste', 'Meal', 'Health', 'Miscellaneous', 'Social', 'Sleep', 'Break', 'Untracked'];
 
         if (viewMode === 'week') {
             for (let i = 6; i >= 0; i--) {
@@ -424,7 +509,11 @@ const TimeTracker = () => {
                 const label = d.toLocaleDateString('default', { weekday: 'short' });
                 const dayObj = { name: label };
                 categories.forEach(cat => {
-                    dayObj[cat] = parseFloat((dailyData[dateStr]?.[cat] || 0).toFixed(2));
+                    if (cat === 'Untracked') {
+                        dayObj[cat] = parseFloat((dailyData[dateStr]?.Other || 0).toFixed(2));
+                    } else {
+                        dayObj[cat] = parseFloat((dailyData[dateStr]?.[cat] || 0).toFixed(2));
+                    }
                 });
                 dayObj.total = parseFloat((dailyData[dateStr]?.total || 0).toFixed(2));
                 chartData.push(dayObj);
@@ -436,7 +525,11 @@ const TimeTracker = () => {
                 const dateStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
                 const dayObj = { name: i.toString() };
                 categories.forEach(cat => {
-                    dayObj[cat] = parseFloat((dailyData[dateStr]?.[cat] || 0).toFixed(2));
+                    if (cat === 'Untracked') {
+                        dayObj[cat] = parseFloat((dailyData[dateStr]?.Other || 0).toFixed(2));
+                    } else {
+                        dayObj[cat] = parseFloat((dailyData[dateStr]?.[cat] || 0).toFixed(2));
+                    }
                 });
                 dayObj.total = parseFloat((dailyData[dateStr]?.total || 0).toFixed(2));
                 chartData.push(dayObj);
@@ -460,14 +553,27 @@ const TimeTracker = () => {
         const studyTotal = getCategoryTotal('Study');
         const workTotal = getCategoryTotal('Work');
         const wasteTotal = getCategoryTotal('Waste');
-        const mealTotal = getCategoryTotal('Meal');
+        const mealTotal = getCategoryTotal('Meal') + getCategoryTotal('Cooking');
         const socialTotal = getCategoryTotal('Social');
-        const cookingTotal = getCategoryTotal('Cooking');
-        const personalTotal = getCategoryTotal('Personal');
+        const healthTotal = getCategoryTotal('Health');
+        const miscTotal = getCategoryTotal('Miscellaneous') + getCategoryTotal('Personal') + getCategoryTotal('Other');
         const sleepTotalDaily = getCategoryTotal('Sleep');
         const breakTotal = getCategoryTotal('Break');
 
-        const grandTotal = studyTotal + workTotal + wasteTotal + mealTotal + socialTotal + cookingTotal + personalTotal + sleepTotalDaily + breakTotal;
+        const grandTotal = studyTotal + workTotal + wasteTotal + mealTotal + socialTotal + healthTotal + miscTotal + sleepTotalDaily + breakTotal;
+
+        // Calculate Untracked Total for the period
+        let totalPeriodHours = 0;
+        if (statView === 'month') {
+            const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+            totalPeriodHours = daysInMonth * 24;
+        } else if (statView === 'week') {
+            totalPeriodHours = 7 * 24;
+        } else {
+            // All time - hard to define untracked perfectly, maybe skip or use a large range
+            totalPeriodHours = grandTotal;
+        }
+        const untrackedTotal = Math.max(0, totalPeriodHours - grandTotal);
 
         return {
             chartData,
@@ -476,10 +582,11 @@ const TimeTracker = () => {
             wasteTotal: wasteTotal.toFixed(1),
             mealTotal: mealTotal.toFixed(1),
             socialTotal: socialTotal.toFixed(1),
-            cookingTotal: cookingTotal.toFixed(1),
-            personalTotal: personalTotal.toFixed(1),
+            healthTotal: healthTotal.toFixed(1),
+            miscTotal: miscTotal.toFixed(1),
             sleepTotal: sleepTotalDaily.toFixed(1),
             breakTotal: breakTotal.toFixed(1),
+            untrackedTotal: untrackedTotal.toFixed(1),
             productiveTotal: (studyTotal + workTotal).toFixed(1),
             grandTotal: grandTotal.toFixed(1),
             monthName: viewDate.toLocaleString('default', { month: 'long', year: 'numeric' })
@@ -564,23 +671,24 @@ const TimeTracker = () => {
         );
         const legend = <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ paddingTop: '0px', paddingBottom: '30px' }} />;
 
-        const categories = [
+        const categoriesArr = [
             { key: 'Study', color: CATEGORY_COLORS.Study },
             { key: 'Work', color: CATEGORY_COLORS.Work },
             { key: 'Waste', color: CATEGORY_COLORS.Waste },
             { key: 'Meal', color: CATEGORY_COLORS.Meal },
-            { key: 'Cooking', color: CATEGORY_COLORS.Cooking },
-            { key: 'Personal', color: CATEGORY_COLORS.Personal },
+            { key: 'Health', color: CATEGORY_COLORS.Health },
+            { key: 'Miscellaneous', color: CATEGORY_COLORS.Miscellaneous },
             { key: 'Social', color: CATEGORY_COLORS.Social },
             { key: 'Sleep', color: CATEGORY_COLORS.Sleep },
-            { key: 'Break', color: CATEGORY_COLORS.Break }
+            { key: 'Break', color: CATEGORY_COLORS.Break },
+            { key: 'Untracked', color: CATEGORY_COLORS.Untracked }
         ];
 
         if (chartType === 'area') {
             return (
                 <AreaChart {...commonProps}>
                     <defs>
-                        {categories.map(cat => (
+                        {categoriesArr.map(cat => (
                             <linearGradient id={`color${cat.key}`} x1="0" y1="0" x2="0" y2="1" key={cat.key}>
                                 <stop offset="5%" stopColor={cat.color} stopOpacity={0.3} />
                                 <stop offset="95%" stopColor={cat.color} stopOpacity={0} />
@@ -603,7 +711,7 @@ const TimeTracker = () => {
                     {yAxis}
                     {tooltip}
                     {legend}
-                    {categories.map(cat => (
+                    {categoriesArr.map(cat => (
                         <Area
                             key={cat.key}
                             type="monotone"
@@ -622,15 +730,29 @@ const TimeTracker = () => {
         }
 
         if (chartType === 'pie') {
-            const pieData = categories.map(cat => {
-                const totalKey = `${cat.key.toLowerCase()}Total`;
-                const val = stats[totalKey];
-                return {
-                    name: cat.key,
-                    value: val ? parseFloat(val) : 0,
-                    color: cat.color
-                };
-            }).filter(c => c.value > 0);
+            const chartSums = {};
+            categoriesArr.forEach(cat => { chartSums[cat.key] = 0; });
+
+            stats.chartData.forEach(day => {
+                categoriesArr.forEach(cat => {
+                    if (cat.key !== 'Untracked') {
+                        chartSums[cat.key] += (day[cat.key] || 0);
+                    }
+                });
+            });
+
+            const totalHoursInView = stats.chartData.length * 24;
+            const totalLoggedTotal = Object.keys(chartSums)
+                .filter(k => k !== 'Untracked')
+                .reduce((acc, k) => acc + chartSums[k], 0);
+
+            chartSums['Untracked'] = Math.max(0, totalHoursInView - totalLoggedTotal);
+
+            const pieData = categoriesArr.map(cat => ({
+                name: cat.key,
+                value: chartSums[cat.key],
+                color: cat.color
+            })).filter(c => c.value > 0);
 
             if (pieData.length === 0) {
                 return (
@@ -660,14 +782,29 @@ const TimeTracker = () => {
                         data={pieData}
                         cx="50%"
                         cy="50%"
-                        innerRadius="60%"
-                        outerRadius="90%"
+                        innerRadius="55%"
+                        outerRadius="75%"
                         paddingAngle={5}
                         dataKey="value"
                         stroke="none"
                         cornerRadius={8}
                         style={{ filter: 'url(#shadow3d)' }}
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        labelLine={false}
+                        label={({ name, percent, x, y, cx }) => {
+                            const item = pieData.find(d => d.name === name);
+                            return (
+                                <text
+                                    x={x}
+                                    y={y}
+                                    fill={CATEGORY_COLORS[name] || '#64748b'}
+                                    textAnchor={x > cx ? 'start' : 'end'}
+                                    dominantBaseline="central"
+                                    style={{ fontSize: '11px', fontWeight: 800, textShadow: '0 1px 2px rgba(255,255,255,0.8)' }}
+                                >
+                                    {`${name}: ${item ? item.value.toFixed(1) : 0}h (${(percent * 100).toFixed(0)}%)`}
+                                </text>
+                            );
+                        }}
                     >
                         {pieData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
@@ -677,7 +814,6 @@ const TimeTracker = () => {
                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
                         formatter={(value) => [`${value}h`, 'Duration']}
                     />
-                    <Legend verticalAlign="bottom" height={36} />
                 </PieChart>
             );
         }
@@ -690,68 +826,161 @@ const TimeTracker = () => {
         );
     };
 
-    const todayStats = useMemo(() => {
-        const filteredLogs = logs.filter(l => l.date === todayStr);
-        const filteredSleep = sleepLogs.filter(l => l.date === todayStr);
-
-        const getDur = (cat) => logs.filter(l => l.date === todayStr && l.category === cat).reduce((acc, l) => acc + l.duration, 0);
-        const sleep = filteredSleep.reduce((acc, l) => acc + l.totalDuration, 0);
-
-        const studyDur = getDur('Study');
-        const workDurValue = getDur('Work');
-        const wasteDur = getDur('Waste');
-        const mealDur = getDur('Meal');
-        const socialDur = getDur('Social');
-        const cookingDur = getDur('Cooking');
-        const personalDur = getDur('Personal');
-        const breakDur = getDur('Break');
-
-        const totalNum = parseFloat(filteredLogs.reduce((acc, l) => acc + l.duration, 0) + sleep);
-
-        return {
-            study: studyDur.toFixed(1),
-            work: workDurValue.toFixed(1),
-            productive: (studyDur + workDurValue).toFixed(1),
-            waste: wasteDur.toFixed(1),
-            meal: mealDur.toFixed(1),
-            social: socialDur.toFixed(1),
-            cooking: cookingDur.toFixed(1),
-            personal: personalDur.toFixed(1),
-            break: breakDur.toFixed(1),
-            sleep: sleep.toFixed(1),
-            total: totalNum.toFixed(1),
-            other: Math.max(0, 24 - totalNum).toFixed(1)
-        };
-    }, [logs, sleepLogs, todayStr]);
-
-    const todaySessions = useMemo(() => {
-        const todayLogs = logs.filter(l => l.date === todayStr);
+    const timelineSessions = useMemo(() => {
+        const targetDate = timelineDate;
+        const result = [];
         const IMPORT_START_DATE = '2026-02-09';
-        const todaySleep = [];
 
-        sleepLogs.filter(sl => sl.date === todayStr && sl.date >= IMPORT_START_DATE).forEach(sl => {
-            const mainDuration = sl.totalDuration - (sl.napDuration || 0);
-            todaySleep.push({
-                id: sl.id + '_main',
-                category: 'Sleep',
-                duration: mainDuration,
-                title: 'Night Sleep (Auto)',
-                startTime: sl.sleepTime,
-                endTime: sl.wakeTime
-            });
-            if (sl.napDuration > 0) {
-                todaySleep.push({
-                    id: sl.id + '_nap',
+        const getPrevDate = (dateStr) => {
+            const d = new Date(dateStr);
+            d.setDate(d.getDate() - 1);
+            return d.toLocaleDateString('en-CA');
+        };
+
+        const getNextDate = (dateStr) => {
+            const d = new Date(dateStr);
+            d.setDate(d.getDate() + 1);
+            return d.toLocaleDateString('en-CA');
+        };
+
+        const prevDateStr = getPrevDate(targetDate);
+        const nextDateStr = getNextDate(targetDate);
+
+        // 1. Process Normal Logs (Activities)
+        logs.forEach(log => {
+            if (log.date === targetDate) {
+                if (log.endTime < log.startTime) {
+                    // Starts today, ends tomorrow. Show Part 1 (Today's part)
+                    result.push({ ...log, endTime: '24:00', id: log.id + '_p1' });
+                } else {
+                    result.push(log);
+                }
+            } else if (log.date === prevDateStr && log.endTime < log.startTime) {
+                // Started yesterday, ends today. Show Part 2 (Today's morning part)
+                result.push({ ...log, startTime: '00:00', id: log.id + '_p2' });
+            }
+        });
+
+        // 2. Process Sleep Logs
+        sleepLogs.filter(sl => sl.date >= IMPORT_START_DATE).forEach(sl => {
+            // Main Sleep logic (Convention: Sl.date is the wakeup day)
+            if (sl.date === targetDate) {
+                if (sl.wakeTime < sl.sleepTime) {
+                    // Crosses midnight: Part 2 (today 00:00 to wake)
+                    result.push({
+                        id: sl.id + '_main_p2',
+                        category: 'Sleep',
+                        title: 'Night Sleep (Auto)',
+                        startTime: '00:00',
+                        endTime: sl.wakeTime
+                    });
+                } else {
+                    // Same day sleep
+                    result.push({
+                        id: sl.id + '_main',
+                        category: 'Sleep',
+                        title: 'Night Sleep (Auto)',
+                        startTime: sl.sleepTime,
+                        endTime: sl.wakeTime
+                    });
+                }
+            } else if (sl.date === nextDateStr && sl.wakeTime < sl.sleepTime) {
+                // Starts tonight (before midnight)
+                result.push({
+                    id: sl.id + '_main_p1',
                     category: 'Sleep',
-                    duration: sl.napDuration,
+                    title: 'Night Sleep (Auto)',
+                    startTime: sl.sleepTime,
+                    endTime: '24:00'
+                });
+            }
+
+            // Nap logic
+            if (sl.date === targetDate && sl.napDuration > 0) {
+                if (sl.napWakeTime < sl.napSleepTime) {
+                    result.push({
+                        id: sl.id + '_nap_p2',
+                        category: 'Sleep',
+                        title: 'Daytime Nap (Auto)',
+                        startTime: '00:00',
+                        endTime: sl.napWakeTime
+                    });
+                } else {
+                    result.push({
+                        id: sl.id + '_nap',
+                        category: 'Sleep',
+                        title: 'Daytime Nap (Auto)',
+                        startTime: sl.napSleepTime,
+                        endTime: sl.napWakeTime
+                    });
+                }
+            } else if (sl.date === nextDateStr && sl.napDuration > 0 && sl.napWakeTime < sl.napSleepTime) {
+                result.push({
+                    id: sl.id + '_nap_p1',
+                    category: 'Sleep',
                     title: 'Daytime Nap (Auto)',
                     startTime: sl.napSleepTime,
-                    endTime: sl.napWakeTime
+                    endTime: '24:00'
                 });
             }
         });
-        return [...todayLogs, ...todaySleep];
-    }, [logs, sleepLogs, todayStr]);
+
+        return result;
+    }, [logs, sleepLogs, timelineDate]);
+
+    const todayStats = useMemo(() => {
+        const calculateDur = (start, end) => {
+            if (!start || !end) return 0;
+            const [sH, sM] = start.split(':').map(Number);
+            const [eH, eM] = end.split(':').map(Number);
+            const startMin = sH * 60 + (sM || 0);
+            const endMin = eH * 60 + (eM || 0);
+            return Math.max(0, (endMin - startMin) / 60);
+        };
+
+        const totals = {
+            Study: 0, Work: 0, Waste: 0, Meal: 0,
+            Social: 0, Health: 0, Miscellaneous: 0, Sleep: 0, Break: 0
+        };
+
+        timelineSessions.forEach(session => {
+            const dur = calculateDur(session.startTime, session.endTime);
+            let cat = session.category;
+            if (cat === 'Cooking') cat = 'Meal';
+            if (cat === 'Personal' || cat === 'Other') cat = 'Miscellaneous';
+
+            // Special keyword check for titles like "ready", "fresh" if they ended up in a generic category
+            const title = (session.title || '').toLowerCase();
+            if (cat === 'Miscellaneous' || cat === 'Break') { // Only re-map if it's already in a "flexible" category
+                if (['ready', 'fresh', 'bath', 'shower', 'bathing'].some(k => title.includes(k))) {
+                    cat = 'Miscellaneous';
+                }
+            }
+
+            if (totals.hasOwnProperty(cat)) {
+                totals[cat] += dur;
+            }
+        });
+
+        const study = totals.Study;
+        const work = totals.Work;
+        const totalLogged = Object.values(totals).reduce((a, b) => a + b, 0);
+
+        return {
+            study: study.toFixed(1),
+            work: totals.Work.toFixed(1),
+            productive: (study + totals.Work).toFixed(1),
+            waste: totals.Waste.toFixed(1),
+            meal: totals.Meal.toFixed(1),
+            health: totals.Health.toFixed(1),
+            social: totals.Social.toFixed(1),
+            miscellaneous: totals.Miscellaneous.toFixed(1),
+            break: totals.Break.toFixed(1),
+            sleep: totals.Sleep.toFixed(1),
+            total: totalLogged.toFixed(1),
+            other: Math.max(0, 24 - totalLogged).toFixed(1)
+        };
+    }, [timelineSessions]);
 
     const groupedLogs = useMemo(() => {
         // Combine logs and sleepLogs (only from today onwards for sleep)
@@ -791,11 +1020,15 @@ const TimeTracker = () => {
         const groups = {};
         filtered.forEach(log => {
             if (!groups[log.date]) {
-                groups[log.date] = { Study: 0, Work: 0, Waste: 0, Meal: 0, Social: 0, Sleep: 0, Break: 0, Cooking: 0, Personal: 0, sessions: [] };
+                groups[log.date] = { Study: 0, Work: 0, Waste: 0, Meal: 0, Social: 0, Sleep: 0, Break: 0, Miscellaneous: 0, Health: 0, sessions: [] };
             }
             groups[log.date].sessions.push(log);
-            if (groups[log.date].hasOwnProperty(log.category)) {
-                groups[log.date][log.category] += log.duration;
+            let targetCat = log.category;
+            if (log.category === 'Cooking') targetCat = 'Meal';
+            if (log.category === 'Personal') targetCat = 'Miscellaneous';
+
+            if (groups[log.date].hasOwnProperty(targetCat)) {
+                groups[log.date][targetCat] += log.duration;
             }
         });
         return Object.entries(groups)
@@ -837,7 +1070,12 @@ const TimeTracker = () => {
             <div className="glass today-summary-bar">
                 <div className="summary-label" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
                     <Zap size={20} fill="var(--primary)" fillOpacity={0.8} style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }} />
-                    <span style={{ letterSpacing: '-0.02em' }}>Today's Achievement:</span>
+                    <span style={{ letterSpacing: '-0.02em' }}>
+                        {timelineDate === todayStr ? "Today's Achievement:" : `Flow on ${(() => {
+                            const [y, m, d] = timelineDate.split('-').map(Number);
+                            return new Date(y, m - 1, d).toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' });
+                        })()}:`}
+                    </span>
                 </div>
                 <div className="today-metrics-container">
                     <div className="metric-item">
@@ -861,23 +1099,23 @@ const TimeTracker = () => {
                     </div>
                     <div className="m-divider"></div>
                     <div className="metric-item">
-                        <span className="m-label">Social</span>
-                        <span className="m-value" style={{ color: CATEGORY_COLORS.Social }}>{todayStats.social}h</span>
-                    </div>
-                    <div className="m-divider"></div>
-                    <div className="metric-item">
                         <span className="m-label">Meal</span>
                         <span className="m-value" style={{ color: CATEGORY_COLORS.Meal }}>{todayStats.meal}h</span>
                     </div>
                     <div className="m-divider"></div>
                     <div className="metric-item">
-                        <span className="m-label">Cook</span>
-                        <span className="m-value" style={{ color: CATEGORY_COLORS.Cooking }}>{todayStats.cooking}h</span>
+                        <span className="m-label">Social</span>
+                        <span className="m-value" style={{ color: CATEGORY_COLORS.Social }}>{todayStats.social}h</span>
                     </div>
                     <div className="m-divider"></div>
                     <div className="metric-item">
-                        <span className="m-label">Personal</span>
-                        <span className="m-value" style={{ color: CATEGORY_COLORS.Personal }}>{todayStats.personal}h</span>
+                        <span className="m-label">Health</span>
+                        <span className="m-value" style={{ color: CATEGORY_COLORS.Health }}>{todayStats.health}h</span>
+                    </div>
+                    <div className="m-divider"></div>
+                    <div className="metric-item">
+                        <span className="m-label">Misc</span>
+                        <span className="m-value" style={{ color: CATEGORY_COLORS.Miscellaneous }}>{todayStats.miscellaneous}h</span>
                     </div>
                     <div className="m-divider"></div>
                     <div className="metric-item">
@@ -896,7 +1134,7 @@ const TimeTracker = () => {
                     </div>
                     <div className="m-divider"></div>
                     <div className="metric-item">
-                        <span className="m-label">Other</span>
+                        <span className="m-label">Untracked</span>
                         <span className="m-value other" style={{ color: '#94a3b8' }}>{todayStats.other}h</span>
                     </div>
                 </div>
@@ -904,11 +1142,75 @@ const TimeTracker = () => {
 
             {/* Daily Flow Timeline */}
             <div className="analytics-container glass" style={{ marginBottom: '32px', padding: '20px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                    <Clock size={18} className="text-indigo-600" />
-                    <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#1e293b' }}>Daily Flow Timeline</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Clock size={18} className="text-indigo-600" />
+                        <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#1e293b' }}>Daily Flow Timeline</span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} className="timeline-date-picker">
+                        <div className="month-nav mini" style={{ margin: 0, padding: '4px 8px' }}>
+                            <button onClick={() => {
+                                const d = new Date(timelineDate);
+                                d.setDate(d.getDate() - 1);
+                                setTimelineDate(d.toLocaleDateString('en-CA'));
+                            }}><ChevronLeft size={14} /></button>
+                            <input
+                                type="date"
+                                value={timelineDate}
+                                onChange={(e) => setTimelineDate(e.target.value)}
+                                className="timeline-date-input"
+                                style={{
+                                    border: 'none',
+                                    background: 'transparent',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 700,
+                                    color: '#475569',
+                                    fontFamily: 'inherit',
+                                    cursor: 'pointer',
+                                    outline: 'none',
+                                    padding: '0 4px'
+                                }}
+                            />
+                            <button onClick={() => {
+                                const d = new Date(timelineDate);
+                                d.setDate(d.getDate() + 1);
+                                setTimelineDate(d.toLocaleDateString('en-CA'));
+                            }}><ChevronRight size={14} /></button>
+                        </div>
+                        {timelineDate !== todayStr && (
+                            <button
+                                onClick={() => setTimelineDate(todayStr)}
+                                style={{
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    color: 'var(--primary)',
+                                    background: 'rgba(var(--primary-rgb), 0.1)',
+                                    border: 'none',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Today
+                            </button>
+                        )}
+                    </div>
                 </div>
-                <DayTimeline sessions={todaySessions} />
+                <div className="timeline-section-layout">
+                    <div className="timeline-column">
+                        <DayTimeline sessions={timelineSessions} />
+                    </div>
+                    <div className="distribution-column">
+                        <div className="distribution-card glass">
+                            <div className="dist-header">
+                                <Activity size={16} />
+                                <span>Day Distribution</span>
+                            </div>
+                            <DayDistributionChart stats={todayStats} />
+                        </div>
+                    </div>
+                </div>
             </div>
 
 
@@ -961,15 +1263,8 @@ const TimeTracker = () => {
                     <div className="stat-card total">
                         <div className="stat-icon" style={{ background: '#10b98122', color: '#10b981' }}><Utensils size={20} /></div>
                         <div className="stat-content">
-                            <span className="stat-label">Meal Time</span>
+                            <span className="stat-label">Meal & Cook</span>
                             <span className="stat-value" style={{ color: '#10b981' }}>{stats?.mealTotal || 0}h</span>
-                        </div>
-                    </div>
-                    <div className="stat-card total">
-                        <div className="stat-icon" style={{ background: '#f43f5e22', color: '#f43f5e' }}><Soup size={20} /></div>
-                        <div className="stat-content">
-                            <span className="stat-label">Cooking Time</span>
-                            <span className="stat-value" style={{ color: '#f43f5e' }}>{stats?.cookingTotal || 0}h</span>
                         </div>
                     </div>
                     <div className="stat-card total">
@@ -980,10 +1275,17 @@ const TimeTracker = () => {
                         </div>
                     </div>
                     <div className="stat-card total">
+                        <div className="stat-icon" style={{ background: '#e11d4822', color: '#e11d48' }}><Activity size={20} /></div>
+                        <div className="stat-content">
+                            <span className="stat-label">Health & Growth</span>
+                            <span className="stat-value" style={{ color: '#e11d48' }}>{stats?.healthTotal || 0}h</span>
+                        </div>
+                    </div>
+                    <div className="stat-card total">
                         <div className="stat-icon" style={{ background: '#8b5cf622', color: '#8b5cf6' }}><Heart size={20} /></div>
                         <div className="stat-content">
-                            <span className="stat-label">Personal Time</span>
-                            <span className="stat-value" style={{ color: '#8b5cf6' }}>{stats?.personalTotal || 0}h</span>
+                            <span className="stat-label">Miscellaneous</span>
+                            <span className="stat-value" style={{ color: '#8b5cf6' }}>{stats?.miscTotal || 0}h</span>
                         </div>
                     </div>
                     <div className="stat-card total">
@@ -1093,9 +1395,9 @@ const TimeTracker = () => {
                             <option value="Study">Study Only</option>
                             <option value="Work">Work Only</option>
                             <option value="Waste">Waste Only</option>
-                            <option value="Meal">Meal Only</option>
-                            <option value="Cooking">Cooking Only</option>
-                            <option value="Personal">Personal Only</option>
+                            <option value="Meal">Meal/Cook Only</option>
+                            <option value="Health">Health / Growth Only</option>
+                            <option value="Miscellaneous">Miscellaneous Only</option>
                             <option value="Social">Social Only</option>
                             <option value="Sleep">Sleep Only</option>
                             <option value="Break">Break Only</option>
@@ -1114,11 +1416,13 @@ const TimeTracker = () => {
                                     {data.Study > 0 && <span className="label study">Study: <strong>{data.Study.toFixed(1)}h</strong></span>}
                                     {data.Work > 0 && <span className="label work">Work: <strong>{data.Work.toFixed(1)}h</strong></span>}
                                     {data.Waste > 0 && <span className="label waste" style={{ color: '#ef4444' }}>Waste: <strong>{data.Waste.toFixed(1)}h</strong></span>}
-                                    {data.Meal > 0 && <span className="label meal" style={{ color: '#10b981' }}>Meal: <strong>{data.Meal.toFixed(1)}h</strong></span>}
+                                    {data.Meal > 0 && <span className="label meal" style={{ color: '#10b981' }}>Meal/Cook: <strong>{data.Meal.toFixed(1)}h</strong></span>}
+                                    {data.Health > 0 && <span className="label health" style={{ color: '#e11d48' }}>Health: <strong>{data.Health.toFixed(1)}h</strong></span>}
+                                    {data.Miscellaneous > 0 && <span className="label misc" style={{ color: '#8b5cf6' }}>Misc: <strong>{data.Miscellaneous.toFixed(1)}h</strong></span>}
                                     {data.Social > 0 && <span className="label social" style={{ color: '#d946ef' }}>Social: <strong>{data.Social.toFixed(1)}h</strong></span>}
                                     {data.Sleep > 0 && <span className="label sleep" style={{ color: '#6366f1' }}>Sleep: <strong>{data.Sleep.toFixed(1)}h</strong></span>}
                                     {data.Break > 0 && <span className="label break" style={{ color: '#06b6d4' }}>Break: <strong>{data.Break.toFixed(1)}h</strong></span>}
-                                    <span className="label total">Day Coverage: <strong>{(data.Study + data.Work + data.Waste + data.Meal + data.Social + data.Sleep + data.Break).toFixed(1)}h</strong></span>
+                                    <span className="label total">Day Coverage: <strong>{(data.Study + data.Work + data.Waste + data.Meal + data.Social + data.Sleep + data.Break + data.Miscellaneous).toFixed(1)}h</strong></span>
                                 </div>
                             </div>
 
@@ -1246,9 +1550,9 @@ const TimeTracker = () => {
                                         <option value="Study">📚 Study</option>
                                         <option value="Work">💼 Work</option>
                                         <option value="Waste">🗑️ Waste</option>
-                                        <option value="Meal">🍱 Meal</option>
-                                        <option value="Cooking">👨‍🍳 Cooking</option>
-                                        <option value="Personal">💪 Personal (Gym/Bath)</option>
+                                        <option value="Meal">🍱 Meal / 👨‍🍳 Cook</option>
+                                        <option value="Health">🏃 Health / 🌱 Growth</option>
+                                        <option value="Miscellaneous">💪 Miscellaneous (Bath/Ready)</option>
                                         <option value="Social">💬 Social (Calls/Events)</option>
                                         <option value="Break">☕ Break (Rest/Nap)</option>
                                     </select>

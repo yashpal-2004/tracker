@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BarChart as ReBarChart,
   Bar as ReBar,
@@ -13,6 +14,7 @@ import {
   Area
 } from 'recharts';
 import './App.css';
+import './CombinedLayouts.css';
 import TimetableView from './TimetableView';
 import HomeDashboard from './HomeDashboard';
 import SmartHabitTracker from './SmartHabitTracker';
@@ -31,6 +33,9 @@ import {
 } from 'firebase/firestore';
 import {
   BookOpen,
+  FileCheck,
+  BrainCircuit,
+  GraduationCap,
   Trash2,
   Edit2,
   Star,
@@ -114,6 +119,8 @@ function App() {
     if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep' || hash === 'Focus') return hash;
     return localStorage.getItem('active_subject') || 'Home';
   });
+
+  const [activeTopic, setActiveTopic] = useState('Lectures');
 
   const [editingTask, setEditingTask] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -273,14 +280,6 @@ function App() {
     };
     try {
       await addDoc(TASKS_COLLECTION, newTask);
-
-      // Delta Sync for Dhruv
-      if (type === 'lecture' && newTask.present !== false) {
-        const fm = tasks.find(t => t.type === 'friend_meta' && t.subjectName === finalSubject);
-        if (fm && fm.attendanceCount !== undefined) {
-          await updateDoc(doc(db, 'tasks', fm.id), { attendanceCount: fm.attendanceCount + 1 });
-        }
-      }
     } catch (e) {
       console.error("Error adding document: ", e);
     }
@@ -299,17 +298,6 @@ function App() {
       }
 
       const res = await updateDoc(doc(db, 'tasks', id), finalUpdates);
-
-      // Delta Sync for Dhruv
-      if (task && task.type === 'lecture' && 'present' in updates) {
-        if (task.present !== updates.present) {
-          const delta = updates.present ? 1 : -1;
-          const fm = tasks.find(t => t.type === 'friend_meta' && t.subjectName === task.subjectName);
-          if (fm && fm.attendanceCount !== undefined) {
-            await updateDoc(doc(db, 'tasks', fm.id), { attendanceCount: (fm.attendanceCount || 0) + delta });
-          }
-        }
-      }
     } catch (e) {
       console.error("Error updating document: ", e);
     }
@@ -337,16 +325,6 @@ function App() {
         }
 
         await deleteDoc(doc(db, 'tasks', id));
-
-        // Delta Sync for Dhruv
-        if (task && task.type === 'lecture' && task.present !== false) {
-          const fm = tasks.find(t => t.type === 'friend_meta' && t.subjectName === task.subjectName);
-          if (fm && fm.attendanceCount !== undefined) {
-            await updateDoc(doc(db, 'tasks', fm.id), { attendanceCount: Math.max(0, (fm.attendanceCount || 0) - 1) });
-          }
-        }
-
-
       } catch (e) {
         console.error("Error deleting document: ", e);
         alert('Failed to delete task. Error: ' + e.message);
@@ -356,14 +334,38 @@ function App() {
   };
 
   const friendMetaDoc = useMemo(() => {
-    return tasks.find(t => t.type === 'friend_meta' && t.subjectName === activeSubject);
+    // Find metadata, prioritizing docs that have an attendanceOffset set
+    const candidates = tasks.filter(t => t.type === 'friend_meta' && (t.subjectName === activeSubject || t.subject === activeSubject));
+    if (candidates.length === 0) return null;
+
+    // Sort to put docs with offset first, then by most recent
+    return candidates.sort((a, b) => {
+      if (a.attendanceOffset !== undefined && b.attendanceOffset === undefined) return -1;
+      if (a.attendanceOffset === undefined && b.attendanceOffset !== undefined) return 1;
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    })[0];
   }, [tasks, activeSubject]);
 
   const updateFriendMeta = async (updates) => {
-    if (friendMetaDoc) {
-      await updateTask(friendMetaDoc.id, updates);
+    // Find ALL metadata docs for this subject to clean up duplicates if they exist
+    const duplicates = tasks.filter(t => t.type === 'friend_meta' && (t.subjectName === activeSubject || t.subject === activeSubject));
+
+    if (duplicates.length > 0) {
+      // Update the first one
+      await updateTask(duplicates[0].id, updates);
+
+      // Clean up others if any (defensive)
+      if (duplicates.length > 1) {
+        for (let i = 1; i < duplicates.length; i++) {
+          await deleteDoc(doc(db, 'tasks', duplicates[i].id));
+        }
+      }
     } else {
-      await addTask(activeSubject, 'friend_meta', updates);
+      // Create new one with explicit fields
+      await addTask(activeSubject, 'friend_meta', {
+        ...updates,
+        createdAt: Date.now()
+      });
     }
   };
 
@@ -398,12 +400,18 @@ function App() {
           leadMsg={leadMsg}
           time={time}
         />
-        <header className="main-header">
-          <div className="title-group">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <header className="main-header unified-subject-header glass">
+          <div className="header-left">
+            <div className="title-group">
               <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject === 'Timetable' ? 'Weekly Class Schedule' : activeSubject === 'Habits' ? 'Smart Habit Tracker' : activeSubject === 'Sleep' ? 'Sleep & Recovery Tracker' : activeSubject === 'Focus' ? 'Flow State Hub' : activeSubject === 'Home' ? '' : activeSubject}</h1>
             </div>
 
+            {!['Home', 'Marks Overview', 'Detailed Analysis', 'Pending Work', 'All Lectures', 'Activity Tracker', 'Exam Schedule', 'Timetable', 'Habits', 'Sleep', 'Focus', 'Safe Zone'].includes(activeSubject) && (
+              <SubjectTabs activeTopic={activeTopic} onChange={setActiveTopic} />
+            )}
+          </div>
+
+          <div className="header-right">
             {(activeSubject === 'Marks Overview' || activeSubject === 'Detailed Analysis') && (
               <div className="threshold-setting glass">
                 <span className="label">Criteria:</span>
@@ -415,6 +423,9 @@ function App() {
                 />
                 <span className="unit">%</span>
               </div>
+            )}
+            {!['Home', 'Marks Overview', 'Detailed Analysis', 'Pending Work', 'All Lectures', 'Activity Tracker', 'Exam Schedule', 'Timetable', 'Habits', 'Sleep', 'Focus', 'Safe Zone'].includes(activeSubject) && (
+              <div id="section-stats-portal"></div>
             )}
           </div>
         </header>
@@ -450,41 +461,52 @@ function App() {
           <SafeZoneView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} setThreshold={setAttendanceThreshold} />
         ) : (
           <div className="sections-container">
-            <TaskSection
-              title="Lectures"
-              type="lecture"
-              activeSubject={activeSubject}
-              tasks={currentTasks.filter(t => t.type === 'lecture')}
-              friendMeta={friendMetaDoc}
-              onUpdateFriendMeta={updateFriendMeta}
-              onAdd={(data) => addTask(activeSubject, 'lecture', data)}
-              onUpdate={updateTask}
-              onDelete={deleteTask}
-              onEdit={setEditingTask}
-              threshold={attendanceThreshold}
-            />
-            <TaskSection
-              title="Assignments"
-              type="assignment"
-              activeSubject={activeSubject}
-              tasks={currentTasks.filter(t => t.type === 'assignment')}
-              onAdd={(data) => addTask(activeSubject, 'assignment', data)}
-              onUpdate={updateTask}
-              onDelete={deleteTask}
-              onEdit={setEditingTask}
-            />
-            <TaskSection
-              title="Quizzes"
-              type="quiz"
-              activeSubject={activeSubject}
-              tasks={currentTasks.filter(t => t.type === 'quiz')}
-              onAdd={(data) => addTask(activeSubject, 'quiz', data)}
-              onUpdate={updateTask}
-              onDelete={deleteTask}
-              onEdit={setEditingTask}
-            />
-            {!activeSubject.includes('Lab') && (
-              <>
+            <div className="active-section-wrapper" key={`${activeSubject}-${activeTopic}`}>
+              {activeTopic === 'Lectures' && (
+                <TaskSection
+                  title="Lectures"
+                  type="lecture"
+                  activeSubject={activeSubject}
+                  tasks={currentTasks.filter(t => t.type === 'lecture')}
+                  friendMeta={friendMetaDoc}
+                  onUpdateFriendMeta={updateFriendMeta}
+                  onAdd={(data) => addTask(activeSubject, 'lecture', data)}
+                  onUpdate={updateTask}
+                  onDelete={deleteTask}
+                  onEdit={setEditingTask}
+                  threshold={attendanceThreshold}
+                />
+              )}
+
+              {activeTopic === 'Assignments' && (
+                <TaskSection
+                  title="Assignments"
+                  type="assignment"
+                  activeSubject={activeSubject}
+                  tasks={currentTasks.filter(t => t.type === 'assignment')}
+                  onAdd={(data) => addTask(activeSubject, 'assignment', data)}
+                  onUpdate={updateTask}
+                  onDelete={deleteTask}
+                  onEdit={setEditingTask}
+                />
+              )}
+
+              {activeTopic === 'Quizzes' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  <TaskSection
+                    title="Quizzes"
+                    type="quiz"
+                    activeSubject={activeSubject}
+                    tasks={currentTasks.filter(t => t.type === 'quiz')}
+                    onAdd={(data) => addTask(activeSubject, 'quiz', data)}
+                    onUpdate={updateTask}
+                    onDelete={deleteTask}
+                    onEdit={setEditingTask}
+                  />
+                </div>
+              )}
+
+              {activeTopic === 'Projects' && (
                 <TaskSection
                   title="Mini Projects"
                   type="project"
@@ -495,36 +517,41 @@ function App() {
                   onDelete={deleteTask}
                   onEdit={setEditingTask}
                 />
-                <ContestSection
-                  activeSubject={activeSubject}
-                  tasks={currentTasks.filter(t => t.type === 'contest')}
-                  onAdd={(data) => addTask(activeSubject, 'contest', data)}
-                  onUpdate={updateTask}
-                  onDelete={deleteTask}
-                  onEdit={setEditingTask}
-                />
-                <ExamSection
-                  title="Mid Sem Exam"
-                  type="midSem"
-                  activeSubject={activeSubject}
-                  tasks={currentTasks.filter(t => t.type === 'midSem')}
-                  onAdd={(data) => addTask(activeSubject, 'midSem', data)}
-                  onUpdate={updateTask}
-                  onDelete={deleteTask}
-                  onEdit={setEditingTask}
-                />
-                <ExamSection
-                  title="End Sem Exam"
-                  type="endSem"
-                  activeSubject={activeSubject}
-                  tasks={currentTasks.filter(t => t.type === 'endSem')}
-                  onAdd={(data) => addTask(activeSubject, 'endSem', data)}
-                  onUpdate={updateTask}
-                  onDelete={deleteTask}
-                  onEdit={setEditingTask}
-                />
-              </>
-            )}
+              )}
+
+              {activeTopic === 'Exams' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  <ContestSection
+                    activeSubject={activeSubject}
+                    tasks={currentTasks.filter(t => t.type === 'contest')}
+                    onAdd={(data) => addTask(activeSubject, 'contest', data)}
+                    onUpdate={updateTask}
+                    onDelete={deleteTask}
+                    onEdit={setEditingTask}
+                  />
+                  <ExamSection
+                    title="Mid Sem Exam"
+                    type="midSem"
+                    activeSubject={activeSubject}
+                    tasks={currentTasks.filter(t => t.type === 'midSem')}
+                    onAdd={(data) => addTask(activeSubject, 'midSem', data)}
+                    onUpdate={updateTask}
+                    onDelete={deleteTask}
+                    onEdit={setEditingTask}
+                  />
+                  <ExamSection
+                    title="End Sem Exam"
+                    type="endSem"
+                    activeSubject={activeSubject}
+                    tasks={currentTasks.filter(t => t.type === 'endSem')}
+                    onAdd={(data) => addTask(activeSubject, 'endSem', data)}
+                    onUpdate={updateTask}
+                    onDelete={deleteTask}
+                    onEdit={setEditingTask}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         )}
       </main>
@@ -541,6 +568,47 @@ function App() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function SubjectTabs({ activeTopic, onChange }) {
+  const tabs = [
+    { id: 'Lectures', icon: BookOpen },
+    { id: 'Assignments', icon: FileCheck },
+    { id: 'Quizzes', icon: BrainCircuit },
+    { id: 'Projects', icon: Layers },
+    { id: 'Exams', icon: GraduationCap }
+  ];
+
+  const [indicatorStyle, setIndicatorStyle] = useState({});
+  const containerRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const activeTab = containerRef.current?.querySelector('.tab-btn.active');
+    if (activeTab) {
+      setIndicatorStyle({
+        width: `${activeTab.offsetWidth}px`,
+        transform: `translateX(${activeTab.offsetLeft - 4}px)`
+      });
+    }
+  }, [activeTopic]);
+
+  return (
+    <div className="subject-tabs-container">
+      <div className="subject-tabs" ref={containerRef}>
+        <div className="tab-indicator" style={indicatorStyle} />
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            className={`tab-btn ${activeTopic === tab.id ? 'active' : ''}`}
+            onClick={() => onChange(tab.id)}
+          >
+            <tab.icon size={18} className="tab-icon" />
+            <span>{tab.id}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -767,12 +835,15 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
   const [isLoaded, setIsLoaded] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
+  const [showForm, setShowForm] = useState(false);
 
   const presentCount = tasks.filter(t => t.present !== false).length;
   const completedCount = tasks.filter(t => t.completed).length;
+  const dhruvCompletedCount = tasks.filter(t => t.dhruvCompleted).length;
   const totalCount = tasks.length;
   const attendPercent = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0;
   const completePercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const dhruvCompletePercent = totalCount > 0 ? Math.round((dhruvCompletedCount / totalCount) * 100) : 0;
 
   // Restore drafts on mount/subject change
   useEffect(() => {
@@ -842,244 +913,360 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     setSuggestions([]);
   };
 
-  return (
-    <section className={`task-section ${type}-section glass`}>
-      {type === 'lecture' && <SafeZoneCalculator tasks={tasks} threshold={threshold} />}
-      <div className="section-header">
-        <div className="section-title-group">
-          <h3>{title}</h3>
-          <p className="section-subtitle">{totalCount} total items</p>
-        </div>
-        <div className="progress-group">
-          {type === 'lecture' && (
-            <div className="progress-card attendance-card dhruv-attendance-card" style={{ borderColor: '#f59e0b' }}>
-              <div className="card-top-label" style={{ color: '#d97706', background: '#fffbeb' }}>DHRUV ATTENDANCE</div>
-              <div className="progress-info" style={{ marginTop: '0', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="number"
-                    value={friendMeta?.attendanceCount ?? presentCount}
-                    onChange={e => onUpdateFriendMeta({ attendanceCount: parseInt(e.target.value) || 0 })}
-                    placeholder={presentCount}
-                    style={{ width: '50px', padding: '4px', border: '1px solid #fcd34d', borderRadius: '6px', fontWeight: 800, textAlign: 'center', background: '#fffbeb' }}
-                  />
-                  <span style={{ fontSize: '0.85em', fontWeight: 600 }}>/ {totalCount}</span>
-                </div>
-                <div className="progress-percent" style={{ color: '#d97706', fontSize: '1.1rem' }}>
-                  {totalCount > 0 ? Math.round(((friendMeta?.attendanceCount ?? presentCount) / totalCount) * 100) : 0}%
+  const [portalNode, setPortalNode] = useState(null);
+
+  useEffect(() => {
+    setPortalNode(document.getElementById('section-stats-portal'));
+  }, []);
+
+  // Calculate the live remote value for Dhruv based on offset logic
+  const remoteDhruvCount = useMemo(() => {
+    if (friendMeta?.attendanceOffset !== undefined) {
+      return presentCount + (friendMeta.attendanceOffset || 0);
+    }
+    return friendMeta?.attendanceCount ?? presentCount;
+  }, [friendMeta, presentCount]);
+
+  const [localAttendance, setLocalAttendance] = useState(null);
+
+  // Keep local state in sync with remote calculations
+  useEffect(() => {
+    setLocalAttendance(remoteDhruvCount);
+  }, [remoteDhruvCount]);
+
+  const statsBar = portalNode && createPortal(
+    <div className="unified-stats-bar-container" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <button
+        className={`header-add-btn ${showForm ? 'active' : ''}`}
+        onClick={() => setShowForm(!showForm)}
+        title={showForm ? "Close Form" : `Add ${title.slice(0, -1)}`}
+      >
+        {showForm ? <X size={18} /> : <Plus size={18} />}
+        <span>{showForm ? 'Cancel' : `Add ${title.slice(0, -1)}`}</span>
+      </button>
+
+      <div className="unified-stats-bar">
+        {type === 'lecture' && (
+          <>
+            <div className="stat-item">
+              <div className="stat-info">
+                <div className="stat-label">Me</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(16, 185, 129, 0.05)', padding: '2px 8px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.1)' }}>
+                  <span className={`stat-value ${attendPercent >= 75 ? 'stat-success' : 'stat-danger'}`}>{presentCount}</span>
+                  <span className="stat-value" style={{ opacity: 0.3, fontSize: '0.8em' }}>/</span>
+                  <span className="stat-value" style={{ fontSize: '0.9rem', opacity: 0.6 }}>{totalCount}</span>
+                  <span className={`stat-subtext ${attendPercent >= 75 ? 'stat-success' : 'stat-danger'}`} style={{ marginLeft: '4px' }}>{attendPercent}%</span>
                 </div>
               </div>
             </div>
-          )}
-          <div className={`progress-card ${type}-card`}>
-            <div className="card-top-label">{type === 'lecture' ? 'COMPLETION' : 'STATUS'}</div>
-            <div className="progress-circle-container">
-              <svg className="progress-circle" viewBox="0 0 36 36">
-                <path className="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                <path className="circle" strokeDasharray={`${completePercent}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-              </svg>
+            <div className="stat-item">
+              <div className="stat-info">
+                <div className="stat-label">Dhruv</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <input
+                    type="number"
+                    value={localAttendance ?? 0}
+                    onChange={e => {
+                      const val = e.target.value;
+                      const newVal = val === '' ? 0 : parseInt(val);
+                      setLocalAttendance(newVal);
+
+                      // Calculate offset relative to current user attendance
+                      onUpdateFriendMeta({
+                        attendanceOffset: newVal - presentCount,
+                        attendanceCount: null
+                      });
+                    }}
+                    className="header-stat-input"
+                    style={{ width: '32px', height: '22px', fontSize: '0.9rem', border: '1px solid #fcd34d', background: '#fffbeb' }}
+                  />
+                  <span className="stat-value" style={{ opacity: 0.3, fontSize: '0.8em' }}>/</span>
+                  <span className="stat-value" style={{ fontSize: '0.9rem', opacity: 0.6 }}>{totalCount}</span>
+                  <span className={`stat-subtext ${((localAttendance ?? 0) / (totalCount || 1) * 100) >= 75 ? 'stat-warning' : 'stat-danger'}`} style={{ marginLeft: '4px' }}>
+                    {totalCount > 0 ? Math.round(((localAttendance ?? 0) / totalCount) * 100) : 0}%
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="progress-info">
-              <span className="progress-percent">{completePercent}%</span>
-              <span className="progress-count">{completedCount}/{totalCount} {type === 'lecture' ? 'Completed' : (type === 'assignment' ? 'Finished' : 'Done')}</span>
+          </>
+        )}
+        <div className="stat-item">
+          <div className="stat-info">
+            <div className="stat-label">{type === 'lecture' ? 'My Comp' : 'Me'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="stat-value">{completePercent}%</span>
+              <span className="stat-subtext" style={{ opacity: 0.6 }}>{completedCount}/{totalCount}</span>
             </div>
           </div>
         </div>
+        {(type === 'project' || type === 'assignment') && (
+          <div className="stat-item">
+            <div className="stat-info">
+              <div className="stat-label">Dhruv</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="stat-value" style={{ color: '#f59e0b' }}>{dhruvCompletePercent}%</span>
+                <span className="stat-subtext" style={{ opacity: 0.6 }}>{dhruvCompletedCount}/{totalCount}</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-      <form className="input-row" onSubmit={handleSubmit} style={{ position: 'relative' }}>
-        <div style={{ position: 'relative', flex: 1 }}>
-          <input
-            placeholder={`${title.slice(0, -1)} name`}
-            value={val}
-            onChange={e => setVal(e.target.value)}
-            onFocus={() => {
-              if (type === 'lecture' && suggestions.length > 0) {
-                setShowSuggestions(true);
-              }
-            }}
-            onBlur={() => {
-              // Delay hiding to allow click on suggestion
-              setTimeout(() => setShowSuggestions(false), 200);
-            }}
-          />
-          {type === 'lecture' && showSuggestions && suggestions.length > 0 && (
-            <div className="autocomplete-dropdown">
-              {suggestions.map((suggestion, index) => (
-                <div
-                  key={index}
-                  className="autocomplete-item"
-                  onClick={() => handleSuggestionClick(suggestion)}
-                >
-                  {suggestion}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-        />
-        <input
-          placeholder={type === 'lecture' ? "Lecture/Notes Link (optional)" : "Link (optional)"}
-          value={link}
-          onChange={e => setLink(e.target.value)}
-        />
-        {type === 'lecture' && (
-          <input
-            placeholder="Notion Notes URL (optional)"
-            value={notionLink}
-            onChange={e => setNotionLink(e.target.value)}
-          />
-        )}
-        {type === 'quiz' && (
-          <input
-            placeholder="Imp Qs"
-            value={impQs}
-            onChange={e => setImpQs(e.target.value)}
-          />
-        )}
-        <button type="submit" className="add-btn">
-          <Plus size={18} />
-          <span>Add</span>
-        </button>
-      </form>
+    </div>,
+    portalNode
+  );
 
-      <div className="task-list">
-        <div className="task-list-header">
-          <span className="col-number">No.</span>
-          <span className="col-name">Name</span>
-          <span className="col-date">Date</span>
-          {type === 'lecture' && <span className="col-attendance">Attendance</span>}
-          <span className="col-completion">{type === 'lecture' ? 'Completed' : (['assignment', 'quiz'].includes(type) ? 'Status' : 'Status (You)')}</span>
-          {type !== 'lecture' && !['assignment', 'quiz'].includes(type) && <span className="col-completion" style={{ color: '#f59e0b' }}>Status (D)</span>}
-          <span className="col-actions">Actions</span>
+  return (
+    <section className={`task-section ${type}-section glass`}>
+      {statsBar}
+      {/* Keeping a hidden or minimal title for accessibility/structure if needed, but the visual header is now in the portal */}
+      <div className="section-header-compact">
+        <div className="section-title-group">
+          <p className="section-subtitle">{totalCount} total {title.toLowerCase()}</p>
         </div>
-        {tasks.map(task => (
-          <div key={task.id} className={`task-item ${task.completed ? 'completed' : ''} ${task.important ? 'important-row' : ''}`}>
-            <div className="col-number">
-              <span className="task-number">#{task.number}</span>
-            </div>
-            <div className="col-name">
-              <span className={`task-name ${task.important ? 'important' : ''}`}>
-                {type === 'lecture' ? (
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+      </div>
+
+      {showForm && (
+        <form className="input-row" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }} style={{ position: 'relative', animation: 'section-fade-in 0.3s ease-out' }}>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <input
+              placeholder={`${title.slice(0, -1)} name`}
+              value={val}
+              onChange={e => setVal(e.target.value)}
+              onFocus={() => {
+                if (type === 'lecture' && suggestions.length > 0) {
+                  setShowSuggestions(true);
+                }
+              }}
+              onBlur={() => {
+                // Delay hiding to allow click on suggestion
+                setTimeout(() => setShowSuggestions(false), 200);
+              }}
+            />
+            {type === 'lecture' && showSuggestions && suggestions.length > 0 && (
+              <div className="autocomplete-dropdown">
+                {suggestions.map((suggestion, index) => (
+                  <div
+                    key={index}
+                    className="autocomplete-item"
+                    onClick={() => handleSuggestionClick(suggestion)}
+                  >
+                    {suggestion}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+          />
+          <input
+            placeholder={type === 'lecture' ? "Lecture/Notes Link (optional)" : "Link (optional)"}
+            value={link}
+            onChange={e => setLink(e.target.value)}
+          />
+          {type === 'lecture' && (
+            <input
+              placeholder="Notion Notes URL (optional)"
+              value={notionLink}
+              onChange={e => setNotionLink(e.target.value)}
+            />
+          )}
+          {type === 'quiz' && (
+            <input
+              placeholder="Imp Qs"
+              value={impQs}
+              onChange={e => setImpQs(e.target.value)}
+            />
+          )}
+          <button type="submit" className="add-btn">
+            <Plus size={18} />
+            <span>Add</span>
+          </button>
+        </form>
+      )}
+
+      {/* Timeline Layout for Lectures */}
+      {type === 'lecture' ? (
+        <div className="timeline-container">
+          {tasks.map((task, index) => (
+            <div key={task.id} className={`timeline-item ${task.completed ? 'completed' : ''} ${task.important ? 'important' : ''}`}>
+              <div className="timeline-marker">
+                <div className="timeline-dot">
+                  <span className="dot-number">#{task.number}</span>
+                </div>
+                {index < tasks.length - 1 && <div className="timeline-line" />}
+              </div>
+              <div className="timeline-content">
+                <div className="timeline-header">
+                  <div className="timeline-title">
                     {task.notes ? (
                       <a href={task.notes} target="_blank" rel="noreferrer" className="lecture-link">
+                        <BookOpen size={16} />
                         {task.name}
                         <ExternalLink size={14} />
                       </a>
                     ) : (
-                      <span className="no-notes">
-                        {task.name} <em style={{ fontSize: '0.8em', opacity: 0.6 }}>(No Link)</em>
-                      </span>
-                    )}
-                    {task.notionUrl && (
-                      <a href={task.notionUrl} target="_blank" rel="noreferrer" className="notion-link" title="Open Notion Notes">
-                        <NotionLogo size={15} />
-                      </a>
-                    )}
-                    {task.autoCreated && (
-                      <span
-                        style={{
-                          fontSize: '0.65rem',
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
-                          color: 'white',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.03em',
-                          boxShadow: '0 2px 4px rgba(245, 158, 11, 0.3)'
-                        }}
-                        title="Automatically created from timetable"
-                      >
-                        ✨ Auto
+                      <span className="lecture-name">
+                        <BookOpen size={16} />
+                        {task.name}
                       </span>
                     )}
                   </div>
-                ) : (
-                  task.link ? (
-                    <a href={task.link} target="_blank" rel="noreferrer">
-                      {task.name} <ExternalLink size={12} style={{ marginLeft: '4px', display: 'inline' }} />
+                  <div className="timeline-badges">
+                    {task.autoCreated && <span className="badge badge-auto">✨ Auto</span>}
+                    {task.important && <span className="badge badge-important">⭐ Important</span>}
+                    {task.present !== false ? (
+                      <span className="badge badge-present">✓ Present</span>
+                    ) : (
+                      <span className="badge badge-absent">✗ Absent</span>
+                    )}
+                  </div>
+                </div>
+                <div className="timeline-meta">
+                  <span className="meta-date"><Calendar size={14} /> {formatDate(task.date)}</span>
+                  {task.notionUrl && (
+                    <a href={task.notionUrl} target="_blank" rel="noreferrer" className="meta-notion">
+                      <NotionLogo size={14} /> Notion Notes
                     </a>
-                  ) : task.name
-                )}
-              </span>
-              <div className="task-meta-mobile">
-                {task.date && (
-                  <span className="task-date">
-                    <Calendar size={12} /> {formatDate(task.date)}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="col-date">
-              <span className="task-date">{formatDate(task.date)}</span>
-            </div>
-            {type === 'lecture' && (
-              <label className="col-attendance">
-                <input
-                  type="checkbox"
-                  checked={task.present ?? true}
-                  onChange={e => onUpdate(task.id, { present: e.target.checked })}
-                  title="Mark Attendance"
-                />
-                <span className="attendance-label">
-                  {task.present !== false ? 'Present' : 'Absent'}
-                </span>
-              </label>
-            )}
-            <div className="col-completion">
-              <div
-                className={`checkbox-wrapper ${task.completed ? 'checked' : ''}`}
-                onClick={() => onUpdate(task.id, { completed: !task.completed })}
-                title="Mark Your Status"
-              >
-                {task.completed && <Check size={14} color="#10b981" />}
-              </div>
-            </div>
-            {type !== 'lecture' && !['assignment', 'quiz'].includes(type) && (
-              <div className="col-completion">
-                <div
-                  className={`checkbox-wrapper ${task.dhruvCompleted ? 'checked' : ''}`}
-                  onClick={() => onUpdate(task.id, { dhruvCompleted: !task.dhruvCompleted })}
-                  style={{ borderColor: '#fcd34d' }}
-                  title="Mark Dhruv's Status"
-                >
-                  {task.dhruvCompleted && <Check size={14} color="#f59e0b" />}
+                  )}
+                </div>
+                <div className="timeline-actions">
+                  <label className="action-toggle">
+                    <input
+                      type="checkbox"
+                      checked={task.present ?? true}
+                      onChange={e => onUpdate(task.id, { present: e.target.checked })}
+                    />
+                    <span>Attendance</span>
+                  </label>
+                  <label className="action-toggle">
+                    <input
+                      type="checkbox"
+                      checked={task.completed}
+                      onChange={e => onUpdate(task.id, { completed: e.target.checked })}
+                    />
+                    <span>Completed</span>
+                  </label>
+                  <div className="action-buttons">
+                    <button className={`icon-btn ${task.important ? 'active' : ''}`} onClick={() => onUpdate(task.id, { important: !task.important })} title="Important">
+                      <Star size={16} fill={task.important ? "currentColor" : "none"} />
+                    </button>
+                    <button className="icon-btn" onClick={() => onEdit(task)} title="Edit">
+                      <Edit2 size={16} />
+                    </button>
+                    <button className="icon-btn delete" onClick={() => onDelete(task.id)} title="Delete">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
-            )}
-            <div className="col-actions">
-              <div className="task-actions">
-                <button
-                  className={`star-btn ${task.important ? 'active' : ''}`}
-                  onClick={() => onUpdate(task.id, { important: !task.important })}
-                  title="Mark Important"
+            </div>
+          ))}
+        </div>
+      ) : ['assignment', 'quiz'].includes(type) ? (
+        /* Compact Grid Layout for Assignments & Quizzes */
+        <div className="compact-grid">
+          {tasks.map(task => (
+            <div key={task.id} className={`grid-item ${task.completed ? 'completed' : ''} ${task.important ? 'important' : ''}`}>
+              <div className="grid-checkbox">
+                <div
+                  className={`custom-checkbox ${task.completed ? 'checked' : ''}`}
+                  onClick={() => onUpdate(task.id, { completed: !task.completed })}
                 >
-                  <Star size={18} fill={task.important ? "currentColor" : "none"} />
+                  {task.completed && <Check size={16} color="#10b981" />}
+                </div>
+              </div>
+              <div className="grid-content">
+                <div className="grid-main">
+                  <span className="grid-number">#{task.number}</span>
+                  <span className={`grid-name ${task.completed ? 'strikethrough' : ''}`}>
+                    {task.link ? (
+                      <a href={task.link} target="_blank" rel="noreferrer">
+                        {task.name} <ExternalLink size={12} />
+                      </a>
+                    ) : task.name}
+                  </span>
+                  {task.important && <Star size={14} fill="#f59e0b" className="inline-star" />}
+                </div>
+                <div className="grid-meta">
+                  <span className="meta-tag"><Calendar size={12} /> {formatDate(task.date)}</span>
+                  {type === 'quiz' && task.impQs && (
+                    <span className="meta-tag impqs-tag">⚡ {task.impQs}</span>
+                  )}
+                  {task.completed && <span className="meta-tag status-done">✓ Done</span>}
+                </div>
+              </div>
+              <div className="grid-actions">
+                <button className={`grid-btn ${task.important ? 'active' : ''}`} onClick={() => onUpdate(task.id, { important: !task.important })}>
+                  <Star size={16} fill={task.important ? "currentColor" : "none"} />
                 </button>
-                <button className="edit-btn" onClick={() => onEdit(task)} title="Edit">
-                  <Edit2 size={18} />
+                <button className="grid-btn" onClick={() => onEdit(task)}>
+                  <Edit2 size={16} />
                 </button>
-                <button
-                  className="delete-btn"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onDelete(task.id);
-                  }}
-                  title="Delete"
-                >
-                  <Trash2 size={18} />
+                <button className="grid-btn delete" onClick={() => onDelete(task.id)}>
+                  <Trash2 size={16} />
                 </button>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        /* Card Gallery Layout for Projects & Contests */
+        <div className="card-gallery">
+          {tasks.map(task => (
+            <div key={task.id} className={`gallery-card ${task.completed ? 'completed' : ''} ${task.important ? 'important' : ''}`}>
+              <div className="card-header">
+                <div className="card-number-badge">#{task.number}</div>
+                {task.important && <Star size={18} fill="#f59e0b" className="card-star" />}
+              </div>
+              <div className="card-body">
+                <h4 className="card-title">
+                  {task.link ? (
+                    <a href={task.link} target="_blank" rel="noreferrer">
+                      {task.name}
+                    </a>
+                  ) : task.name}
+                </h4>
+                <div className="card-meta">
+                  <span className="card-date"><Calendar size={14} /> {formatDate(task.date)}</span>
+                </div>
+              </div>
+              <div className="card-footer">
+                <div className="card-status">
+                  <div className="status-group">
+                    <span className="status-label">You</span>
+                    <div
+                      className={`status-indicator ${task.completed ? 'active' : ''}`}
+                      onClick={() => onUpdate(task.id, { completed: !task.completed })}
+                    >
+                      {task.completed ? <Check size={14} /> : <span>—</span>}
+                    </div>
+                  </div>
+                  <div className="status-group">
+                    <span className="status-label">Dhruv</span>
+                    <div
+                      className={`status-indicator dhruv ${task.dhruvCompleted ? 'active' : ''}`}
+                      onClick={() => onUpdate(task.id, { dhruvCompleted: !task.dhruvCompleted })}
+                    >
+                      {task.dhruvCompleted ? <Check size={14} /> : <span>—</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="card-actions">
+                  <button className="card-btn" onClick={() => onEdit(task)} title="Edit">
+                    <Edit2 size={16} />
+                  </button>
+                  <button className="card-btn delete" onClick={() => onDelete(task.id)} title="Delete">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -1170,6 +1357,7 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
   // Dhruv fields
   const [dhruvQuizCorrect, setDhruvQuizCorrect] = useState('');
   const [dhruvCodingCorrect, setDhruvCodingCorrect] = useState('');
+  const [showForm, setShowForm] = useState(false);
 
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -1179,6 +1367,7 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
 
   // Calculate total marks for contests
   const totalMarks = tasks.reduce((acc, t) => acc + (t.marks || 0), 0);
+  const dhruvTotalMarks = tasks.reduce((acc, t) => acc + (t.dhruvMarks || 0), 0);
   const maxMarks = tasks.reduce((acc, t) => acc + (t.maxMarks || 0), 0);
 
   // Auto-adjust weightages when checkboxes change
@@ -1352,228 +1541,260 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
     setWrittenTotal('');
   };
 
-  return (
-    <section className="task-section contest-section glass">
-      <div className="section-header">
-        <div className="section-title-group">
-          <h3>Coding Contests</h3>
-          <p className="section-subtitle">{totalCount} total contests</p>
-        </div>
-        <div className="progress-group">
-          <div className="progress-card marks-card" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.1))' }}>
-            <div className="card-top-label">TOTAL MARKS</div>
-            <div className="progress-circle-container">
-              <Trophy size={32} style={{ color: '#10b981' }} />
+  const [portalNode, setPortalNode] = useState(null);
+  useEffect(() => {
+    setPortalNode(document.getElementById('section-stats-portal'));
+  }, []);
+
+  const statsBar = portalNode && createPortal(
+    <div className="unified-stats-bar-container" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <button
+        className={`header-add-btn ${showForm ? 'active' : ''}`}
+        onClick={() => setShowForm(!showForm)}
+        title={showForm ? "Close Form" : "Add Contest"}
+      >
+        {showForm ? <X size={18} /> : <Plus size={18} />}
+        <span>{showForm ? 'Cancel' : 'Add Contest'}</span>
+      </button>
+
+      <div className="unified-stats-bar">
+        <div className="stat-item">
+          <div className="stat-info">
+            <div className="stat-label">Me</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Trophy size={14} style={{ color: '#10b981' }} />
+              <span className="stat-value">{totalMarks}/{maxMarks}</span>
+              <span className="stat-subtext">({maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : 0}%)</span>
             </div>
-            <div className="progress-info">
-              <span className="progress-percent">{totalMarks}/{maxMarks}</span>
-              <span className="progress-count">{maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : 0}% Score</span>
+          </div>
+        </div>
+        <div className="stat-item">
+          <div className="stat-info">
+            <div className="stat-label">Dhruv</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Trophy size={14} style={{ color: '#f59e0b' }} />
+              <span className="stat-value" style={{ color: '#f59e0b' }}>{dhruvTotalMarks}/{maxMarks}</span>
+              <span className="stat-subtext">({maxMarks > 0 ? Math.round((dhruvTotalMarks / maxMarks) * 100) : 0}%)</span>
             </div>
           </div>
         </div>
       </div>
+    </div>,
+    portalNode
+  );
 
-      <form className="contest-input-form" onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
-        {/* Contest Name */}
-        <div style={{ marginBottom: '15px', display: 'flex', gap: '15px' }}>
-          <input
-            placeholder="Contest name"
-            value={contestName}
-            onChange={e => setContestName(e.target.value)}
-            style={{ flex: 1, maxWidth: '400px' }}
-          />
-          <input
-            type="date"
-            value={contestDate}
-            onChange={e => setContestDate(e.target.value)}
-            style={{ width: '160px' }}
-          />
+  return (
+    <section className="task-section contest-section glass">
+      {statsBar}
+      <div className="section-header-compact">
+        <div className="section-title-group">
+          <p className="section-subtitle">{totalCount} total contests</p>
         </div>
+      </div>
 
-        {/* Components Row */}
-        <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '15px' }}>
-          {/* Quiz Component */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasQuiz ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasQuiz ? '#a78bfa' : 'inherit' }}>
-              <input
-                type="checkbox"
-                checked={hasQuiz}
-                onChange={e => setHasQuiz(e.target.checked)}
-              />
-              Quiz
-            </label>
-            {hasQuiz && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ fontSize: '0.65em', color: '#8b5cf6', fontWeight: 800 }}>U</span>
-                    <input
-                      type="number"
-                      placeholder="U"
-                      value={quizCorrect}
-                      onChange={e => setQuizCorrect(e.target.value)}
-                      style={{ width: '55px', padding: '6px' }}
-                      min="0"
-                    />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
-                    <input
-                      type="number"
-                      placeholder="D"
-                      value={dhruvQuizCorrect}
-                      onChange={e => setDhruvQuizCorrect(e.target.value)}
-                      style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
-                      min="0"
-                    />
-                  </div>
-                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                  <input
-                    type="number"
-                    placeholder="Total"
-                    value={quizTotal}
-                    onChange={e => setQuizTotal(e.target.value)}
-                    style={{ width: '60px', padding: '6px' }}
-                    min="1"
-                  />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
-                    <input
-                      type="number"
-                      placeholder="40"
-                      value={quizWeight}
-                      onChange={e => setQuizWeight(e.target.value)}
-                      style={{ width: '45px', padding: '6px' }}
-                      min="0"
-                      max="100"
-                      step="0.1"
-                    />
-                    <span style={{ opacity: 0.7, fontSize: '0.7em' }}>%</span>
-                  </div>
-                </div>
-              </div>
-            )}
+      {showForm && (
+        <form className="contest-input-form" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }} style={{ marginBottom: '20px', animation: 'section-fade-in 0.3s ease-out' }}>
+          {/* Contest Name */}
+          <div style={{ marginBottom: '15px', display: 'flex', gap: '15px' }}>
+            <input
+              placeholder="Contest name"
+              value={contestName}
+              onChange={e => setContestName(e.target.value)}
+              style={{ flex: 1, maxWidth: '400px' }}
+            />
+            <input
+              type="date"
+              value={contestDate}
+              onChange={e => setContestDate(e.target.value)}
+              style={{ width: '160px' }}
+            />
           </div>
 
-          {/* Coding Component */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasCoding ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasCoding ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasCoding ? '#60a5fa' : 'inherit' }}>
-              <input
-                type="checkbox"
-                checked={hasCoding}
-                onChange={e => setHasCoding(e.target.checked)}
-              />
-              Coding
-            </label>
-            {hasCoding && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ fontSize: '0.65em', color: '#60a5fa', fontWeight: 800 }}>U</span>
+          {/* Components Row */}
+          <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '15px' }}>
+            {/* Quiz Component */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasQuiz ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasQuiz ? '#a78bfa' : 'inherit' }}>
+                <input
+                  type="checkbox"
+                  checked={hasQuiz}
+                  onChange={e => setHasQuiz(e.target.checked)}
+                />
+                Quiz
+              </label>
+              {hasQuiz && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '0.65em', color: '#8b5cf6', fontWeight: 800 }}>U</span>
+                      <input
+                        type="number"
+                        placeholder="U"
+                        value={quizCorrect}
+                        onChange={e => setQuizCorrect(e.target.value)}
+                        style={{ width: '55px', padding: '6px' }}
+                        min="0"
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
+                      <input
+                        type="number"
+                        placeholder="D"
+                        value={dhruvQuizCorrect}
+                        onChange={e => setDhruvQuizCorrect(e.target.value)}
+                        style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
+                        min="0"
+                      />
+                    </div>
+                    <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
                     <input
                       type="number"
-                      placeholder="U"
-                      value={codingCorrect}
-                      onChange={e => setCodingCorrect(e.target.value)}
-                      style={{ width: '55px', padding: '6px' }}
-                      min="0"
+                      placeholder="Total"
+                      value={quizTotal}
+                      onChange={e => setQuizTotal(e.target.value)}
+                      style={{ width: '60px', padding: '6px' }}
+                      min="1"
                     />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
-                    <input
-                      type="number"
-                      placeholder="D"
-                      value={dhruvCodingCorrect}
-                      onChange={e => setDhruvCodingCorrect(e.target.value)}
-                      style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
-                      min="0"
-                    />
-                  </div>
-                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                  <input
-                    type="number"
-                    placeholder="Total"
-                    value={codingTotal}
-                    onChange={e => setCodingTotal(e.target.value)}
-                    style={{ width: '60px', padding: '6px' }}
-                    min="1"
-                  />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
-                    <input
-                      type="number"
-                      placeholder="60"
-                      value={codingWeight}
-                      onChange={e => setCodingWeight(e.target.value)}
-                      style={{ width: '45px', padding: '6px' }}
-                      min="0"
-                      max="100"
-                      step="0.1"
-                    />
-                    <span style={{ opacity: 0.7, fontSize: '0.7em' }}>%</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
+                      <input
+                        type="number"
+                        placeholder="40"
+                        value={quizWeight}
+                        onChange={e => setQuizWeight(e.target.value)}
+                        style={{ width: '45px', padding: '6px' }}
+                        min="0"
+                        max="100"
+                        step="0.1"
+                      />
+                      <span style={{ opacity: 0.7, fontSize: '0.7em' }}>%</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* Written Component */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasWritten ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasWritten ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasWritten ? '#34d399' : 'inherit' }}>
-              <input
-                type="checkbox"
-                checked={hasWritten}
-                onChange={e => setHasWritten(e.target.checked)}
-              />
-              Written
-            </label>
-            {hasWritten && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ fontSize: '0.65em', color: '#10b981', fontWeight: 800 }}>U</span>
+            {/* Coding Component */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasCoding ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasCoding ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasCoding ? '#60a5fa' : 'inherit' }}>
+                <input
+                  type="checkbox"
+                  checked={hasCoding}
+                  onChange={e => setHasCoding(e.target.checked)}
+                />
+                Coding
+              </label>
+              {hasCoding && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '0.65em', color: '#60a5fa', fontWeight: 800 }}>U</span>
+                      <input
+                        type="number"
+                        placeholder="U"
+                        value={codingCorrect}
+                        onChange={e => setCodingCorrect(e.target.value)}
+                        style={{ width: '55px', padding: '6px' }}
+                        min="0"
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
+                      <input
+                        type="number"
+                        placeholder="D"
+                        value={dhruvCodingCorrect}
+                        onChange={e => setDhruvCodingCorrect(e.target.value)}
+                        style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
+                        min="0"
+                      />
+                    </div>
+                    <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
                     <input
                       type="number"
-                      placeholder="U"
+                      placeholder="Total"
+                      value={codingTotal}
+                      onChange={e => setCodingTotal(e.target.value)}
+                      style={{ width: '60px', padding: '6px' }}
+                      min="1"
+                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
+                      <input
+                        type="number"
+                        placeholder="60"
+                        value={codingWeight}
+                        onChange={e => setCodingWeight(e.target.value)}
+                        style={{ width: '45px', padding: '6px' }}
+                        min="0"
+                        max="100"
+                        step="0.1"
+                      />
+                      <span style={{ opacity: 0.7, fontSize: '0.7em' }}>%</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Written Component */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasWritten ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasWritten ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasWritten ? '#34d399' : 'inherit' }}>
+                <input
+                  type="checkbox"
+                  checked={hasWritten}
+                  onChange={e => setHasWritten(e.target.checked)}
+                />
+                Written
+              </label>
+              {hasWritten && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '0.65em', color: '#10b981', fontWeight: 800 }}>U</span>
+                      <input
+                        type="number"
+                        placeholder="U"
+                        value={writtenCorrect}
+                        onChange={e => setWrittenCorrect(e.target.value)}
+                        style={{ width: '55px', padding: '6px' }}
+                        min="0"
+                      />
+                    </div>
+                    <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
+                    <input
+                      type="number"
+                      placeholder="Total"
                       value={writtenCorrect}
-                      onChange={e => setWrittenCorrect(e.target.value)}
-                      style={{ width: '55px', padding: '6px' }}
-                      min="0"
+                      onChange={e => setWrittenTotal(e.target.value)}
+                      style={{ width: '70px', padding: '6px' }}
+                      min="1"
                     />
-                  </div>
-                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                  <input
-                    type="number"
-                    placeholder="Total"
-                    value={writtenTotal}
-                    onChange={e => setWrittenTotal(e.target.value)}
-                    style={{ width: '70px', padding: '6px' }}
-                    min="1"
-                  />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
-                    <input
-                      type="number"
-                      placeholder="30"
-                      value={writtenWeight}
-                      onChange={e => setWrittenWeight(e.target.value)}
-                      style={{ width: '55px', padding: '6px' }}
-                      min="0"
-                      max="100"
-                      step="0.1"
-                    />
-                    <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+                      <input
+                        type="number"
+                        placeholder="30"
+                        value={writtenWeight}
+                        onChange={e => setWrittenWeight(e.target.value)}
+                        style={{ width: '55px', padding: '6px' }}
+                        min="0"
+                        max="100"
+                        step="0.1"
+                      />
+                      <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Add Button */}
-        <button type="submit" className="add-btn">
-          <Plus size={18} />
-          <span>Add Contest</span>
-        </button>
-      </form>
+          {/* Add Button */}
+          <button type="submit" className="add-btn">
+            <Plus size={18} />
+            <span>Add Contest</span>
+          </button>
+        </form>
+      )}
 
       <div className="task-list" style={{ overflowX: 'auto' }}>
         <div className="task-list-header">
@@ -1691,6 +1912,7 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
   const [writtenTotal, setWrittenTotal] = useState('');
   const [writtenWeight, setWrittenWeight] = useState('30');
   const [examDate, setExamDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showForm, setShowForm] = useState(false);
 
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -1698,6 +1920,7 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
 
   // Calculate total marks for exams
   const totalMarks = tasks.reduce((acc, t) => acc + (t.marks || 0), 0);
+  const dhruvTotalMarks = tasks.reduce((acc, t) => acc + (t.dhruvMarks || 0), 0);
   const maxMarks = tasks.reduce((acc, t) => acc + (t.maxMarks || 0), 0);
 
   // Auto-adjust weightages when checkboxes change
@@ -1871,202 +2094,234 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
     setWrittenTotal('');
   };
 
-  return (
-    <section className={`task-section ${type}-section glass`}>
-      <div className="section-header">
-        <div className="section-title-group">
-          <h3>{title}</h3>
-          <p className="section-subtitle">{totalCount} total exams</p>
-        </div>
-        <div className="progress-group">
-          <div className="progress-card marks-card" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.1))' }}>
-            <div className="card-top-label">TOTAL MARKS</div>
-            <div className="progress-circle-container">
-              <Trophy size={32} style={{ color: '#10b981' }} />
+  const [portalNode, setPortalNode] = useState(null);
+  useEffect(() => {
+    setPortalNode(document.getElementById('section-stats-portal'));
+  }, []);
+
+  const statsBar = portalNode && createPortal(
+    <div className="unified-stats-bar-container" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <button
+        className={`header-add-btn ${showForm ? 'active' : ''}`}
+        onClick={() => setShowForm(!showForm)}
+        title={showForm ? "Close Form" : `Add ${title.slice(0, -1)}`}
+      >
+        {showForm ? <X size={18} /> : <Plus size={18} />}
+        <span>{showForm ? 'Cancel' : title.includes('Mid') ? 'Mid' : 'End'}</span>
+      </button>
+
+      <div className="unified-stats-bar">
+        <div className="stat-item">
+          <div className="stat-info">
+            <div className="stat-label">Me</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Trophy size={14} style={{ color: '#10b981' }} />
+              <span className="stat-value">{totalMarks}/{maxMarks}</span>
+              <span className="stat-subtext" style={{ fontSize: '0.65rem' }}>({maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : 0}%)</span>
             </div>
-            <div className="progress-info">
-              <span className="progress-percent">{totalMarks}/{maxMarks}</span>
-              <span className="progress-count">{maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : 0}% Score</span>
+          </div>
+        </div>
+        <div className="stat-item">
+          <div className="stat-info">
+            <div className="stat-label">Dhruv</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Trophy size={14} style={{ color: '#f59e0b' }} />
+              <span className="stat-value" style={{ color: '#f59e0b' }}>{dhruvTotalMarks}/{maxMarks}</span>
+              <span className="stat-subtext" style={{ fontSize: '0.65rem' }}>({maxMarks > 0 ? Math.round((dhruvTotalMarks / maxMarks) * 100) : 0}%)</span>
             </div>
           </div>
         </div>
       </div>
+    </div>,
+    portalNode
+  );
 
-      <form className="contest-input-form" onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
-        {/* Exam Name */}
-        <div style={{ marginBottom: '15px', display: 'flex', gap: '15px' }}>
-          <input
-            placeholder={`${title} name (e.g., ${type === 'midSem' ? 'Mid Term 2024' : 'Finals 2024'})`}
-            value={examName}
-            onChange={e => setExamName(e.target.value)}
-            style={{ flex: 1, maxWidth: '400px' }}
-          />
-          <input
-            type="date"
-            value={examDate}
-            onChange={e => setExamDate(e.target.value)}
-            style={{ width: '160px' }}
-          />
+  return (
+    <section className={`task-section ${type}-section glass`}>
+      {statsBar}
+      <div className="section-header-compact">
+        <div className="section-title-group">
+          <p className="section-subtitle">{totalCount} total exams</p>
         </div>
+      </div>
 
-        {/* Components Row */}
-        <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '15px' }}>
-          {/* Quiz Component */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasQuiz ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasQuiz ? '#a78bfa' : 'inherit' }}>
-              <input
-                type="checkbox"
-                checked={hasQuiz}
-                onChange={e => setHasQuiz(e.target.checked)}
-              />
-              Quiz
-            </label>
-            {hasQuiz && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  type="number"
-                  placeholder="Correct"
-                  value={quizCorrect}
-                  onChange={e => setQuizCorrect(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="0"
-                />
-                <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                <input
-                  type="number"
-                  placeholder="Total"
-                  value={quizTotal}
-                  onChange={e => setQuizTotal(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="1"
-                />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
-                  <input
-                    type="number"
-                    placeholder="40"
-                    value={quizWeight}
-                    onChange={e => setQuizWeight(e.target.value)}
-                    style={{ width: '55px', padding: '6px' }}
-                    min="0"
-                    max="100"
-                    step="0.1"
-                  />
-                  <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
-                </div>
-              </div>
-            )}
+      {showForm && (
+        <form className="contest-input-form" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }} style={{ marginBottom: '20px', animation: 'section-fade-in 0.3s ease-out' }}>
+          {/* Exam Name */}
+          <div style={{ marginBottom: '15px', display: 'flex', gap: '15px' }}>
+            <input
+              placeholder={`${title} name (e.g., ${type === 'midSem' ? 'Mid Term 2024' : 'Finals 2024'})`}
+              value={examName}
+              onChange={e => setExamName(e.target.value)}
+              style={{ flex: 1, maxWidth: '400px' }}
+            />
+            <input
+              type="date"
+              value={examDate}
+              onChange={e => setExamDate(e.target.value)}
+              style={{ width: '160px' }}
+            />
           </div>
 
-          {/* Coding Component */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasCoding ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasCoding ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasCoding ? '#60a5fa' : 'inherit' }}>
-              <input
-                type="checkbox"
-                checked={hasCoding}
-                onChange={e => setHasCoding(e.target.checked)}
-              />
-              Coding
-            </label>
-            {hasCoding && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Components Row */}
+          <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '15px' }}>
+            {/* Quiz Component */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasQuiz ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasQuiz ? '#a78bfa' : 'inherit' }}>
                 <input
-                  type="number"
-                  placeholder="Correct"
-                  value={codingCorrect}
-                  onChange={e => setCodingCorrect(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="0"
+                  type="checkbox"
+                  checked={hasQuiz}
+                  onChange={e => setHasQuiz(e.target.checked)}
                 />
-                <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                <input
-                  type="number"
-                  placeholder="Total"
-                  value={codingTotal}
-                  onChange={e => setCodingTotal(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="1"
-                />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+                Quiz
+              </label>
+              {hasQuiz && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <input
                     type="number"
-                    placeholder="60"
-                    value={codingWeight}
-                    onChange={e => setCodingWeight(e.target.value)}
-                    style={{ width: '55px', padding: '6px' }}
+                    placeholder="Correct"
+                    value={quizCorrect}
+                    onChange={e => setQuizCorrect(e.target.value)}
+                    style={{ width: '70px', padding: '6px' }}
                     min="0"
-                    max="100"
-                    step="0.1"
                   />
-                  <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
+                  <input
+                    type="number"
+                    placeholder="Total"
+                    value={quizTotal}
+                    onChange={e => setQuizTotal(e.target.value)}
+                    style={{ width: '70px', padding: '6px' }}
+                    min="1"
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+                    <input
+                      type="number"
+                      placeholder="40"
+                      value={quizWeight}
+                      onChange={e => setQuizWeight(e.target.value)}
+                      style={{ width: '55px', padding: '6px' }}
+                      min="0"
+                      max="100"
+                      step="0.1"
+                    />
+                    <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            {/* Coding Component */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasCoding ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasCoding ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasCoding ? '#60a5fa' : 'inherit' }}>
+                <input
+                  type="checkbox"
+                  checked={hasCoding}
+                  onChange={e => setHasCoding(e.target.checked)}
+                />
+                Coding
+              </label>
+              {hasCoding && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    placeholder="Correct"
+                    value={codingCorrect}
+                    onChange={e => setCodingCorrect(e.target.value)}
+                    style={{ width: '70px', padding: '6px' }}
+                    min="0"
+                  />
+                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
+                  <input
+                    type="number"
+                    placeholder="Total"
+                    value={codingTotal}
+                    onChange={e => setCodingTotal(e.target.value)}
+                    style={{ width: '70px', padding: '6px' }}
+                    min="1"
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+                    <input
+                      type="number"
+                      placeholder="60"
+                      value={codingWeight}
+                      onChange={e => setCodingWeight(e.target.value)}
+                      style={{ width: '55px', padding: '6px' }}
+                      min="0"
+                      max="100"
+                      step="0.1"
+                    />
+                    <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Written Component */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasWritten ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasWritten ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasWritten ? '#34d399' : 'inherit' }}>
+                <input
+                  type="checkbox"
+                  checked={hasWritten}
+                  onChange={e => setHasWritten(e.target.checked)}
+                />
+                Written
+              </label>
+              {hasWritten && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    placeholder="Correct"
+                    value={writtenCorrect}
+                    onChange={e => setWrittenCorrect(e.target.value)}
+                    style={{ width: '70px', padding: '6px' }}
+                    min="0"
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
+                    <input
+                      type="number"
+                      placeholder="D"
+                      value={dhruvWrittenCorrect}
+                      onChange={e => setDhruvWrittenCorrect(e.target.value)}
+                      style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
+                      min="0"
+                    />
+                  </div>
+                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
+                  <input
+                    type="number"
+                    placeholder="Total"
+                    value={writtenTotal}
+                    onChange={e => setWrittenTotal(e.target.value)}
+                    style={{ width: '60px', padding: '6px' }}
+                    min="1"
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+                    <input
+                      type="number"
+                      placeholder="30"
+                      value={writtenWeight}
+                      onChange={e => setWrittenWeight(e.target.value)}
+                      style={{ width: '55px', padding: '6px' }}
+                      min="0"
+                      max="100"
+                      step="0.1"
+                    />
+                    <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Written Component */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasWritten ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasWritten ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasWritten ? '#34d399' : 'inherit' }}>
-              <input
-                type="checkbox"
-                checked={hasWritten}
-                onChange={e => setHasWritten(e.target.checked)}
-              />
-              Written
-            </label>
-            {hasWritten && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  type="number"
-                  placeholder="Correct"
-                  value={writtenCorrect}
-                  onChange={e => setWrittenCorrect(e.target.value)}
-                  style={{ width: '70px', padding: '6px' }}
-                  min="0"
-                />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
-                  <input
-                    type="number"
-                    placeholder="D"
-                    value={dhruvWrittenCorrect}
-                    onChange={e => setDhruvWrittenCorrect(e.target.value)}
-                    style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
-                    min="0"
-                  />
-                </div>
-                <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                <input
-                  type="number"
-                  placeholder="Total"
-                  value={writtenTotal}
-                  onChange={e => setWrittenTotal(e.target.value)}
-                  style={{ width: '60px', padding: '6px' }}
-                  min="1"
-                />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
-                  <input
-                    type="number"
-                    placeholder="30"
-                    value={writtenWeight}
-                    onChange={e => setWrittenWeight(e.target.value)}
-                    style={{ width: '55px', padding: '6px' }}
-                    min="0"
-                    max="100"
-                    step="0.1"
-                  />
-                  <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Add Button */}
-        <button type="submit" className="add-btn">
-          <Plus size={18} />
-          <span>Add Exam</span>
-        </button>
-      </form>
+          {/* Add Button */}
+          <button type="submit" className="add-btn">
+            <Plus size={18} />
+            <span>Add Exam</span>
+          </button>
+        </form>
+      )}
 
       <div className="task-list" style={{ overflowX: 'auto' }}>
         <div className="task-list-header">
@@ -2822,8 +3077,20 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
 
       const lects = subjectTasks.filter(t => t.type === 'lecture');
       const attCount = lects.filter(t => t.present !== false).length;
-      const friendMeta = tasks.find(t => t.type === 'friend_meta' && t.subjectName === s);
-      const dhruvAttCount = friendMeta?.attendanceCount ?? attCount;
+
+      // Thorough lookup for friendMeta in SummaryView
+      const subjectFriendMeta = tasks.filter(t => t.type === 'friend_meta' && (t.subjectName === s || t.subject === s))
+        .sort((a, b) => {
+          const aOffset = a.attendanceOffset !== undefined;
+          const bOffset = b.attendanceOffset !== undefined;
+          if (aOffset && !bOffset) return -1;
+          if (!aOffset && bOffset) return 1;
+          return (b.createdAt || 0) - (a.createdAt || 0);
+        })[0];
+
+      const dhruvAttCount = subjectFriendMeta?.attendanceOffset !== undefined
+        ? attCount + (subjectFriendMeta.attendanceOffset || 0)
+        : (subjectFriendMeta?.attendanceCount ?? attCount);
 
       const stats = {
         total: lects.length,
@@ -4468,8 +4735,7 @@ function SafeZoneCalculator({ tasks, threshold = 75 }) {
       message = `You can skip ${skip} next lecture${skip > 1 ? 's' : ''}`;
       status = "safe";
     } else {
-      message = "On the edge! Attend the next lecture.";
-      status = "warning";
+      return null; // Remove the "On the edge" warning as requested
     }
   } else {
     const need = Math.ceil((tRatio * total - present) / needRatio);
