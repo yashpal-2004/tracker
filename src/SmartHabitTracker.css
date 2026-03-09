@@ -511,14 +511,21 @@ textarea {
   width: 100%;
 }
 
-.reflection-dot {
+.reflection-icon-badge {
   position: absolute;
-  bottom: 2px;
-  width: 4px;
-  height: 4px;
-  background: white;
+  bottom: 0px;
+  right: 0px;
+  background: var(--primary);
+  color: white;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  z-index: 2;
+  border: 1px solid white;
 }
 
 .reflection-btn-mini {
@@ -680,8 +687,9 @@ textarea {
 
 .calendar-badge-mini {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: -2px;
+  left: -2px;
+  /* Move to left to avoid clashing with reflection badge */
   background: #ef4444;
   color: white;
   width: 14px;
@@ -691,7 +699,7 @@ textarea {
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
-  z-index: 1;
+  z-index: 2;
   animation: pulse 2s infinite;
 }
 

@@ -21,7 +21,10 @@ import {
   MessageSquare,
   BarChart2,
   Briefcase,
-  Flame
+  Flame,
+  Archive,
+  RotateCcw,
+  History
 } from 'lucide-react';
 import {
   LineChart,
@@ -112,6 +115,8 @@ const SmartHabitTracker = () => {
   const [userStats, setUserStats] = useState({ xp: 0, badges: {}, completedDates: {}, dailyWorkLog: {} });
   const [rewardToast, setRewardToast] = useState(null);
   const [sortBy, setSortBy] = useState('category'); // 'category' | 'priority' | 'name'
+  const [showArchived, setShowArchived] = useState(false);
+  const [showExtraHistory, setShowExtraHistory] = useState(false);
   const [detailHabit, setDetailHabit] = useState(null);
 
   // Hourly check for day change
@@ -592,11 +597,25 @@ const SmartHabitTracker = () => {
   };
 
   const deleteHabit = async (id) => {
-    if (window.confirm('Are you sure you want to delete this habit?')) {
+    if (window.confirm('Are you sure you want to delete this habit? All history will be lost.')) {
       try {
         await deleteDoc(doc(db, 'habits', id));
       } catch (err) {
         console.error("Error deleting habit:", err);
+      }
+    }
+  };
+
+  const toggleArchiveHabit = async (habit) => {
+    const isArchiving = !habit.isArchived;
+    if (window.confirm(`Are you sure you want to ${isArchiving ? 'archive' : 'unarchive'} this habit? It will be ${isArchiving ? 'removed' : 'added back'} to your active goals and calculations.`)) {
+      try {
+        await updateDoc(doc(db, 'habits', habit.id), {
+          isArchived: isArchiving,
+          archivedAt: isArchiving ? Date.now() : null
+        });
+      } catch (err) {
+        console.error("Error toggling archive status:", err);
       }
     }
   };
@@ -609,10 +628,11 @@ const SmartHabitTracker = () => {
   };
 
   const stats = useMemo(() => {
-    const total = habits.length;
-    const completed = habits.filter(h => (h.history || []).includes(currentDate)).length;
-    const avgStreak = total > 0 ? (habits.reduce((acc, h) => acc + (h.currentStreak || 0), 0) / total).toFixed(1) : 0;
-    const bestStreak = Math.max(0, ...habits.map(h => h.longestStreak || 0));
+    const activeHabits = habits.filter(h => h.isArchived !== true);
+    const total = activeHabits.length;
+    const completed = activeHabits.filter(h => (h.history || []).includes(currentDate)).length;
+    const avgStreak = total > 0 ? (activeHabits.reduce((acc, h) => acc + (h.currentStreak || 0), 0) / total).toFixed(1) : 0;
+    const bestStreak = Math.max(0, ...activeHabits.map(h => h.longestStreak || 0));
 
     const extraWorkTodayXP = (userStats.extraWorkLog?.[currentDate] || [])
       .reduce((acc, entry) => acc + (entry.xpAwarded || 0), 0);
@@ -626,6 +646,7 @@ const SmartHabitTracker = () => {
     const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     habits.forEach(h => {
+      if (h.isArchived) return; // Skip archived habits from XP calculations
       const viewDate = habitViewDates[h.id] || new Date();
       const monthPrefix = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
       const history = h.history || [];
@@ -674,6 +695,9 @@ const SmartHabitTracker = () => {
     Object.entries(userStats.extraWorkLog || {}).forEach(([date, dayLogs]) => {
       dayLogs.forEach(entry => {
         if (entry.habitId && map[entry.habitId]) {
+          const habit = habits.find(vh => vh.id === entry.habitId);
+          if (habit?.isArchived) return; // Skip extra work for archived habits in calculations
+
           const viewDate = habitViewDates[entry.habitId] || new Date();
           const monthPrefix = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
 
@@ -703,16 +727,23 @@ const SmartHabitTracker = () => {
     const isCurrent = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth();
 
     habits.forEach(h => {
+      // Base XP earned in selected month - ALWAYS count history for total earned
+      const history = h.history || [];
+      const monthHistory = history.filter(dateStr => dateStr.startsWith(monthPrefix));
+      totalBaseXP += monthHistory.length * 10;
+
+      // Logic to include habit in targets if it was active during the viewed month
+      const viewMonthStart = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+      const viewMonthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59).getTime();
+
+      const wasActiveInMonth = !h.isArchived || (h.archivedAt && h.archivedAt > viewMonthStart);
+
+      if (!wasActiveInMonth) return; // Skip archived habits from targets if they were archived BEFORE this month
       // Target for selected month
       const t = h.manualTargets?.[monthKey] !== undefined
         ? h.manualTargets[monthKey]
         : getDefaultMonthlyTarget(h.allowExtraWork ?? true, h.activeDays ?? [0, 1, 2, 3, 4, 5, 6], d);
       totalTarget += t;
-
-      // Base XP earned in selected month
-      const history = h.history || [];
-      const monthHistory = history.filter(dateStr => dateStr.startsWith(monthPrefix));
-      totalBaseXP += monthHistory.length * 10;
 
       // Expected XP calc
       let hExpected = 0;
@@ -737,7 +768,7 @@ const SmartHabitTracker = () => {
     Object.entries(userStats.extraWorkLog || {}).forEach(([date, entries]) => {
       if (date.startsWith(monthPrefix)) {
         entries.forEach(e => {
-          totalExtraXP += (e.xpAwarded || 0);
+          totalExtraXP += (e.xpAwarded || 0); // Include extra XP from all habits in the month
           extraWorkCount++;
         });
       }
@@ -748,23 +779,29 @@ const SmartHabitTracker = () => {
   }, [habits, userStats.extraWorkLog, collectiveDate]);
 
   const todayStats = useMemo(() => {
-    const completedCount = habits.filter(h => (h.history || []).includes(currentDate)).length;
-    const baseXP = completedCount * 10;
+    const activeHabits = habits.filter(h => h.isArchived !== true);
+    const completedCount = activeHabits.filter(h => (h.history || []).includes(currentDate)).length;
+    const baseXP = habits.filter(h => (h.history || []).includes(currentDate)).length * 10; // XP still counts for archived if checked today
     const extraXP = (userStats.extraWorkLog?.[currentDate] || []).reduce((acc, e) => acc + (e.xpAwarded || 0), 0);
-    return { totalXP: baseXP + extraXP };
+    return { totalXP: baseXP + extraXP, activeCompletedCount: completedCount };
   }, [habits, currentDate, userStats.extraWorkLog]);
 
   const todayBadge = userStats.badges?.[currentDate];
 
   const renderHabit = (habit) => {
     const checkedToday = (habit.history || []).includes(currentDate);
+    const isArchived = habit.isArchived;
+
     return (
-      <div key={habit.id} className="habit-card" style={{ '--habit-color': habit.color, '--habit-glow': `${habit.color}20` }}>
-        <div className="habit-info-header">
-          <div className="habit-title-group" style={{ flex: 1 }}>
-            <span className="habit-category" style={{ background: `${habit.color}15`, color: habit.color }}>
-              {habit.category}
-            </span>
+      <div key={habit.id} className={`habit-card ${isArchived ? 'archived' : ''}`} style={{ '--habit-color': habit.color, '--habit-glow': `${habit.color}20`, opacity: isArchived ? 0.75 : 1 }}>
+        <div className="habit-info-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '12px' }}>
+          <div className="habit-title-group" style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="habit-category" style={{ background: `${habit.color}15`, color: habit.color }}>
+                {habit.category}
+              </span>
+              {isArchived && <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>ARCHIVED</span>}
+            </div>
             <h3 className="habit-name">{habit.name}</h3>
             {habitXpMap[habit.id]?.monthTarget > 0 && (
               <div className="monthly-target-info">
@@ -775,22 +812,23 @@ const SmartHabitTracker = () => {
                   <span className="target-pct">{Math.floor(((habitXpMap[habit.id]?.monthTotal || 0) / habitXpMap[habit.id]?.monthTarget) * 100)}%</span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px', flexWrap: 'wrap', gap: '4px' }}>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
                     Expected: {habitXpMap[habit.id]?.monthExpected || 0} XP
                   </div>
                   {(() => {
                     const diff = (habitXpMap[habit.id]?.monthTotal || 0) - (habitXpMap[habit.id]?.monthExpected || 0);
                     return (
                       <div style={{
-                        fontSize: '0.65rem',
+                        fontSize: '0.6rem',
                         fontWeight: 800,
                         color: diff >= 0 ? '#10b981' : '#f59e0b',
                         padding: '2px 6px',
                         background: diff >= 0 ? '#f0fdf4' : '#fffbeb',
-                        borderRadius: '4px'
+                        borderRadius: '4px',
+                        textAlign: 'right'
                       }}>
-                        {diff >= 0 ? `Ahead by ${diff}` : `Behind by ${Math.abs(diff)}`} XP
+                        {diff >= 0 ? `Ahead by ${diff}` : `Behind by ${Math.abs(diff)}`} XP ({Math.floor((Math.abs(diff) / (habitXpMap[habit.id]?.monthTarget || 1)) * 100)}%)
                       </div>
                     );
                   })()}
@@ -818,7 +856,7 @@ const SmartHabitTracker = () => {
               </div>
             )}
           </div>
-          <div className="habit-actions">
+          <div className="habit-actions" style={{ flexWrap: 'wrap', justifyContent: 'flex-end', gap: '6px' }}>
             <div className="habit-xp-group">
               <div className="habit-xp-badge base" title="Base XP (10 per day)">
                 <Check size={10} />
@@ -858,9 +896,13 @@ const SmartHabitTracker = () => {
                 activeDays: habit.activeDays ?? [0, 1, 2, 3, 4, 5, 6],
                 manualTargets: habit.manualTargets || {}
               });
+              setEditingHabit(habit);
               setShowAddModal(true);
             }} title="Edit Habit">
               <Edit2 size={16} />
+            </button>
+            <button className="action-btn" onClick={() => toggleArchiveHabit(habit)} title={isArchived ? "Unarchive Habit" : "Archive Habit"}>
+              {isArchived ? <RotateCcw size={16} /> : <Archive size={16} />}
             </button>
             <button className="action-btn" onClick={() => deleteHabit(habit.id)} title="Delete Habit">
               <Trash2 size={16} />
@@ -972,6 +1014,28 @@ const SmartHabitTracker = () => {
             </span>
           </button>
           <button
+            className={`action-btn ${showExtraHistory ? 'active' : ''}`}
+            onClick={() => setShowExtraHistory(!showExtraHistory)}
+            title={showExtraHistory ? "Hide Extra Grind History" : "Show Extra Grind History"}
+            style={{ minWidth: 'auto', gap: '6px', padding: '0 12px', border: showExtraHistory ? '2px solid #6366f1' : '2px solid transparent' }}
+          >
+            <History size={18} color={showExtraHistory ? '#6366f1' : 'currentColor'} />
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: showExtraHistory ? '#6366f1' : 'currentColor' }}>
+              Grind
+            </span>
+          </button>
+          <button
+            className={`action-btn ${showArchived ? 'active' : ''}`}
+            onClick={() => setShowArchived(!showArchived)}
+            title={showArchived ? "Hide Archived Habits" : "Show Archived Habits"}
+            style={{ minWidth: 'auto', gap: '6px', padding: '0 12px', border: showArchived ? '2px solid var(--primary)' : '2px solid transparent' }}
+          >
+            <Archive size={18} color={showArchived ? 'var(--primary)' : 'currentColor'} />
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: showArchived ? 'var(--primary)' : 'currentColor' }}>
+              Archive
+            </span>
+          </button>
+          <button
             className="add-habit-btn"
             onClick={() => {
               setEditingHabit(null);
@@ -1033,7 +1097,7 @@ const SmartHabitTracker = () => {
                       background: diff >= 0 ? '#f0fdf4' : '#fffbeb',
                       borderRadius: '4px'
                     }}>
-                      {diff >= 0 ? `Ahead by ${diff}` : `Behind by ${Math.abs(diff)}`} XP
+                      {diff >= 0 ? `Ahead by ${diff}` : `Behind by ${Math.abs(diff)}`} XP ({currentMonthStats.totalTarget > 0 ? Math.floor((Math.abs(diff) / currentMonthStats.totalTarget) * 100) : 0}%)
                     </div>
                   );
                 })()}
@@ -1109,51 +1173,79 @@ const SmartHabitTracker = () => {
       </div>
 
       <div className="habit-grid">
-        {sortBy === 'category' ? (
-          CATEGORIES.map(category => {
-            let categoryHabits = habits.filter(h => h.category === category);
-            if (categoryHabits.length === 0) return null;
+        {(() => {
+          const activeHabits = habits.filter(h => h.isArchived !== true);
+          const archivedHabits = habits.filter(h => h.isArchived === true);
 
-            return (
-              <div key={category} className="category-section" style={{ gridColumn: '1 / -1', marginBottom: '24px' }}>
-                <div className="category-header" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #f1f5f9' }}>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1e293b', margin: 0 }}>{category}</h3>
-                  <span style={{ background: '#f1f5f9', color: '#64748b', fontSize: '0.75rem', fontWeight: 700, padding: '2px 8px', borderRadius: '6px' }}>
-                    {categoryHabits.length}
-                  </span>
+          const renderGrid = (filteredHabits) => {
+            if (sortBy === 'category') {
+              return CATEGORIES.map(category => {
+                let categoryHabits = filteredHabits.filter(h => h.category === category);
+                if (categoryHabits.length === 0) return null;
+
+                return (
+                  <div key={category} className="category-section" style={{ gridColumn: '1 / -1', marginBottom: '24px' }}>
+                    <div className="category-header" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #f1f5f9' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#1e293b', margin: 0 }}>{category}</h3>
+                      <span style={{ background: '#f1f5f9', color: '#64748b', fontSize: '0.75rem', fontWeight: 700, padding: '2px 8px', borderRadius: '6px' }}>
+                        {categoryHabits.length}
+                      </span>
+                    </div>
+                    <div className="habit-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '24px' }}>
+                      {categoryHabits.map(habit => renderHabit(habit))}
+                    </div>
+                  </div>
+                );
+              });
+            } else {
+              return (
+                <div className="habit-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '24px', gridColumn: '1 / -1' }}>
+                  {[...filteredHabits]
+                    .sort((a, b) => {
+                      if (sortBy === 'priority') {
+                        const pMap = { 'High': 3, 'Medium': 2, 'Low': 1 };
+                        return (pMap[b.priority] || 0) - (pMap[a.priority] || 0);
+                      } else {
+                        return a.name.localeCompare(b.name);
+                      }
+                    })
+                    .map(habit => renderHabit(habit))
+                  }
                 </div>
-                <div className="habit-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '24px' }}>
-                  {categoryHabits.map(habit => renderHabit(habit))}
-                </div>
-              </div>
-            );
-          })
-        ) : (
-          <div className="habit-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '24px', gridColumn: '1 / -1' }}>
-            {[...habits]
-              .sort((a, b) => {
-                if (sortBy === 'priority') {
-                  const pMap = { 'High': 3, 'Medium': 2, 'Low': 1 };
-                  return (pMap[b.priority] || 0) - (pMap[a.priority] || 0);
-                } else {
-                  return a.name.localeCompare(b.name);
-                }
-              })
-              .map(habit => renderHabit(habit))
+              );
             }
-          </div>
-        )}
+          };
 
-        {habits.length === 0 && (
-          <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
-            <div className="empty-state-icon">
-              <Zap size={48} />
-            </div>
-            <h3>No Habits Yet</h3>
-            <p>Start your journey by adding your first habit. Consistency is key!</p>
-            <button className="add-habit-btn" onClick={() => setShowAddModal(true)}>Add Your First Habit</button>
-          </div>
-        )}
+          return (
+            <>
+              {renderGrid(activeHabits)}
+
+              {showArchived && archivedHabits.length > 0 && (
+                <div style={{ gridColumn: '1 / -1', marginTop: '48px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', paddingBottom: '12px', borderBottom: '2px dashed #e2e8f0' }}>
+                    <Archive size={20} color="#64748b" />
+                    <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#64748b', margin: 0 }}>Archived Habits</h3>
+                    <span style={{ background: '#f1f5f9', color: '#64748b', fontSize: '0.8rem', fontWeight: 700, padding: '4px 12px', borderRadius: '8px' }}>
+                      {archivedHabits.length}
+                    </span>
+                  </div>
+                  {renderGrid(archivedHabits)}
+                </div>
+              )}
+
+              {activeHabits.length === 0 && !showArchived && (
+                <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+                  <div className="empty-state-icon">
+                    <Zap size={48} />
+                  </div>
+                  <h3>No Active Habits</h3>
+                  <p>Start your journey by adding your first habit. Consistency is key!</p>
+                  <button className="add-habit-btn" onClick={() => setShowAddModal(true)}>Add Your First Habit</button>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {detailHabit && (
@@ -1167,75 +1259,77 @@ const SmartHabitTracker = () => {
 
       <HabitAnalytics habits={habits} userStats={userStats} />
 
-      <div className="extra-work-history-section glass" style={{ marginTop: '32px', padding: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <Briefcase className="text-indigo-600" />
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Extra Grind History</h3>
+      {showExtraHistory && (
+        <div className="extra-work-history-section glass" style={{ marginTop: '32px', padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Briefcase className="text-indigo-600" />
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Extra Grind History</h3>
+            </div>
+            <button
+              onClick={migratePastXP}
+              style={{
+                fontSize: '0.75rem',
+                padding: '6px 12px',
+                background: '#f1f5f9',
+                borderRadius: '8px',
+                color: '#64748b',
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={e => e.currentTarget.style.background = '#e2e8f0'}
+              onMouseOut={e => e.currentTarget.style.background = '#f1f5f9'}
+              title="Recalculate all past XP to match current standards"
+            >
+              Update Past XP to Standards
+            </button>
           </div>
-          <button
-            onClick={migratePastXP}
-            style={{
-              fontSize: '0.75rem',
-              padding: '6px 12px',
-              background: '#f1f5f9',
-              borderRadius: '8px',
-              color: '#64748b',
-              fontWeight: 700,
-              border: 'none',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={e => e.currentTarget.style.background = '#e2e8f0'}
-            onMouseOut={e => e.currentTarget.style.background = '#f1f5f9'}
-            title="Recalculate all past XP to match current standards"
-          >
-            Update Past XP to Standards
-          </button>
-        </div>
-        <div className="extra-work-list">
-          {Object.entries(userStats.extraWorkLog || {})
-            .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
-            .map(([date, entries]) => (
-              entries.map((entry, idx) => (
-                <div key={`${date}-${idx}`} className="extra-work-item glass">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                      <div style={{ padding: '8px', background: '#f1f5f9', borderRadius: '10px' }}>
-                        <Flame size={16} className="text-orange-500" />
+          <div className="extra-work-list">
+            {Object.entries(userStats.extraWorkLog || {})
+              .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
+              .map(([date, entries]) => (
+                entries.map((entry, idx) => (
+                  <div key={`${date}-${idx}`} className="extra-work-item glass">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <div style={{ padding: '8px', background: '#f1f5f9', borderRadius: '10px' }}>
+                          <Flame size={16} className="text-orange-500" />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{entry.description || entry.habitName}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{entry.habitName} • {date} • {entry.duration}</div>
+                        </div>
                       </div>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{entry.description || entry.habitName}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{entry.habitName} • {date} • {entry.duration}</div>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '0.9rem' }}>+{entry.xpAwarded} XP</span>
+                        <button className="action-btn" onClick={() => {
+                          const habit = habits.find(h => h.id === entry.habitId);
+                          if (habit) {
+                            setSelectedHabitForExtra(habit);
+                            setEditingExtraWork({ date, index: idx, entry });
+                            setExtraWorkData({
+                              description: entry.description,
+                              duration: entry.duration,
+                              targetDate: '',
+                              logDate: date
+                            });
+                            setShowExtraWorkModal(true);
+                          }
+                        }}><Edit2 size={14} /></button>
+                        <button className="action-btn" onClick={() => deleteExtraWork(date, idx, entry)}><Trash2 size={14} /></button>
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '0.9rem' }}>+{entry.xpAwarded} XP</span>
-                      <button className="action-btn" onClick={() => {
-                        const habit = habits.find(h => h.id === entry.habitId);
-                        if (habit) {
-                          setSelectedHabitForExtra(habit);
-                          setEditingExtraWork({ date, index: idx, entry });
-                          setExtraWorkData({
-                            description: entry.description,
-                            duration: entry.duration,
-                            targetDate: '',
-                            logDate: date
-                          });
-                          setShowExtraWorkModal(true);
-                        }
-                      }}><Edit2 size={14} /></button>
-                      <button className="action-btn" onClick={() => deleteExtraWork(date, idx, entry)}><Trash2 size={14} /></button>
                     </div>
                   </div>
-                </div>
-              ))
-            ))}
-          {(!userStats.extraWorkLog || Object.keys(userStats.extraWorkLog).length === 0) && (
-            <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>No extra work logged yet. Use the ⚡ icon on habits to start!</p>
-          )}
+                ))
+              ))}
+            {(!userStats.extraWorkLog || Object.keys(userStats.extraWorkLog).length === 0) && (
+              <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>No extra work logged yet. Use the ⚡ icon on habits to start!</p>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {showAddModal && (
         <div className="habit-modal-overlay">
@@ -1680,7 +1774,11 @@ const HabitCalendar = ({ history, reflections, color, onToggleDate, onAddReflect
           disabled={!isActive}
         >
           {d}
-          {hasReflection && <span className="reflection-dot"></span>}
+          {hasReflection && (
+            <div className="reflection-icon-badge" title="Has Reflection">
+              <MessageSquare size={8} fill="currentColor" />
+            </div>
+          )}
           {shouldShowFlame && (
             <div className="calendar-badge-mini" title={globalBadge || "Extra Grit Logged"}>
               <Flame size={8} fill="currentColor" />
@@ -2168,7 +2266,7 @@ const HabitDetailAnalyticsModal = ({ habit, userStats, xpStats, onClose }) => {
                     background: diff >= 0 ? '#f0fdf4' : '#fffbeb',
                     borderRadius: '6px'
                   }}>
-                    {diff >= 0 ? `Ahead by ${diff}` : `Behind by ${Math.abs(diff)}`} XP
+                    {diff >= 0 ? `Ahead by ${diff}` : `Behind by ${Math.abs(diff)}`} XP ({xpStats.monthTarget > 0 ? Math.floor((Math.abs(diff) / xpStats.monthTarget) * 100) : 0}%)
                   </div>
                 );
               })()}

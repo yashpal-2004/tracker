@@ -811,14 +811,14 @@ function BookmarkBar({ activeSubject, onSelect, leadMsg, time }) {
             <span>Notion</span>
           </a>
           <a
-            href="https://chatgpt.com/g/g-69784d86478081919281e702b0f97dea-academic-pdf-notes-builder"
+            href="https://dsa-eight-delta.vercel.app/"
             target="_blank"
             rel="noreferrer"
             className="bookmark-item"
-            title="AI Notes Builder"
+            title="DSA Tracker"
           >
-            <MessageSquare size={14} />
-            <span>Notes AI</span>
+            <TrendingUp size={14} />
+            <span>DSA Tracker</span>
           </a>
         </div>
       </div>
