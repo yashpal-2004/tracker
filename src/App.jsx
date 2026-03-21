@@ -13,6 +13,7 @@ import {
   ComposedChart,
   Area
 } from 'recharts';
+import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import './App.css';
 import './CombinedLayouts.css';
 import TimetableView from './TimetableView';
@@ -144,6 +145,43 @@ function App() {
     return parseInt(localStorage.getItem('attendance_threshold')) || 75;
   });
   const [time, setTime] = useState(new Date());
+
+  const [zoomLevel, setZoomLevel] = useState(() => {
+    return parseInt(localStorage.getItem('user_zoom_level')) || 100;
+  });
+
+  // Find user preferences task, if any, or use local state
+  const userPrefs = useMemo(() => tasks.find(t => t.type === 'user_prefs'), [tasks]);
+
+  useEffect(() => {
+    if (userPrefs && userPrefs.zoomLevel && userPrefs.zoomLevel !== zoomLevel) {
+      setZoomLevel(userPrefs.zoomLevel);
+      localStorage.setItem('user_zoom_level', userPrefs.zoomLevel);
+    }
+  }, [userPrefs]);
+
+  useEffect(() => {
+    document.body.style.zoom = `${zoomLevel}%`;
+    document.documentElement.style.setProperty('--zoom-level', zoomLevel);
+  }, [zoomLevel]);
+
+  const handleZoomUpdate = async (newZoom) => {
+    setZoomLevel(newZoom);
+    localStorage.setItem('user_zoom_level', newZoom);
+    if (userPrefs) {
+      await updateTask(userPrefs.id, { zoomLevel: newZoom });
+    } else {
+      try {
+        await addDoc(TASKS_COLLECTION, {
+          type: 'user_prefs',
+          zoomLevel: newZoom,
+          createdAt: Date.now()
+        });
+      } catch (e) {
+        console.error("Error creating user prefs: ", e);
+      }
+    }
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000 * 60); // Update every minute
@@ -583,6 +621,17 @@ function App() {
           }}
         />
       )}
+      <div className="zoom-widget glass">
+        <div className="zoom-header">
+          <span>DISPLAY ZOOM</span>
+          <span className="zoom-value">{zoomLevel}%</span>
+        </div>
+        <div className="zoom-controls">
+          <button onClick={() => handleZoomUpdate(Math.max(50, zoomLevel - 10))} title="Zoom Out"><ZoomOut size={16} /></button>
+          <button onClick={() => handleZoomUpdate(100)} title="Reset Zoom" className="reset-btn"><RotateCcw size={16} /></button>
+          <button onClick={() => handleZoomUpdate(Math.min(150, zoomLevel + 10))} title="Zoom In"><ZoomIn size={16} /></button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -869,7 +918,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
   const [showForm, setShowForm] = useState(false);
   const [filterMode, setFilterMode] = useState('All');
 
-  const regularTasks = tasks.filter(t => !t.isFree);
+  const regularTasks = tasks;
   const presentCount = regularTasks.filter(t => t.present !== false).length;
   const completedCount = regularTasks.filter(t => t.completed).length;
   const dhruvCompletedCount = regularTasks.filter(t => t.dhruvCompleted).length;
@@ -3093,7 +3142,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
 
       const subjectTasks = tasks.filter(t => t.subjectName === s);
       const getCategoryStats = (type) => {
-        const filtered = subjectTasks.filter(t => t.type === type && !t.isFree);
+        const filtered = subjectTasks.filter(t => t.type === type);
         const total = filtered.length;
         const done = filtered.filter(t => t.completed).length;
         const totalMarks = filtered.reduce((acc, t) => acc + (t.marks || 0), 0);
@@ -3107,7 +3156,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
         return { total, done, percent, totalMarks, dhruvTotalMarks, maxMarks };
       };
 
-      const lects = subjectTasks.filter(t => t.type === 'lecture' && !t.isFree);
+      const lects = subjectTasks.filter(t => t.type === 'lecture');
       const attCount = lects.filter(t => t.present !== false).length;
 
       // Thorough lookup for friendMeta in SummaryView
@@ -3676,7 +3725,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
             </h3>
             <div style={{ display: 'flex', gap: '12px' }}>
               <div style={{ padding: '8px 16px', borderRadius: '100px', background: '#eff6ff', color: '#3b82f6', fontSize: '0.85rem', fontWeight: 700, border: '1px solid #dbeafe' }}>
-                {tasks.filter(t => t.type === 'lecture' && !t.completed && !t.isFree).length} Total Pending
+                {tasks.filter(t => t.type === 'lecture' && !t.completed).length} Total Pending
               </div>
             </div>
           </div>
@@ -3686,7 +3735,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '24px' }}>
               {subjects.map(subjectName => {
                 const pendingTasks = tasks
-                  .filter(t => t.subjectName === subjectName && t.type === 'lecture' && !t.completed && !t.isFree)
+                  .filter(t => t.subjectName === subjectName && t.type === 'lecture' && !t.completed)
                   .sort((a, b) => new Date(a.date || a.createdAt) - new Date(b.date || b.createdAt));
 
                 if (pendingTasks.length === 0) return null;
@@ -3968,7 +4017,7 @@ function SafeZoneView({ tasks, subjects, threshold, setThreshold }) {
       }
 
       const subjectTasks = tasks.filter(t => t.subjectName === s);
-      const lects = subjectTasks.filter(t => t.type === 'lecture' && !t.isFree);
+      const lects = subjectTasks.filter(t => t.type === 'lecture');
       const attCount = lects.filter(t => t.present !== false).length;
 
       const stats = {
@@ -4429,7 +4478,7 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
   }, [tasks, filterSubject, searchQuery]);
 
   const stats = useMemo(() => {
-    const regularLectures = allLectures.filter(t => !t.isFree);
+    const regularLectures = allLectures;
     const total = regularLectures.length;
     if (total === 0) return { total: 0, attendance: 0, completion: 0 };
 
@@ -4763,7 +4812,7 @@ function ExamCountdown({ now: externalNow }) {
 }
 
 function SafeZoneCalculator({ tasks, threshold = 75 }) {
-  const regularTasks = tasks.filter(t => !t.isFree);
+  const regularTasks = tasks.filter(t => t.type === 'lecture');
   const present = regularTasks.filter(t => t.present !== false).length;
   const total = regularTasks.length;
   const percentage = total > 0 ? (present / total) * 100 : 100;

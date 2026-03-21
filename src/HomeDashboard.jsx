@@ -17,7 +17,7 @@ const HomeDashboard = ({ tasks, todayStr }) => {
         const activeTasks = tasks.filter(t => t.type !== 'friend_meta');
 
         // 1. Attendance Logic
-        const regularLectures = activeTasks.filter(t => t.type === 'lecture' && !t.isFree);
+        const regularLectures = activeTasks.filter(t => t.type === 'lecture');
         const totalLectures = regularLectures.length;
         const presentLectures = regularLectures.filter(t => t.present !== false).length;
         const attendancePct = totalLectures > 0 ? (presentLectures / totalLectures) * 100 : 0;

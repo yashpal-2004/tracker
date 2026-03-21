@@ -45,7 +45,7 @@ export const SCHEDULE_DATA = [
             { name: 'Intro to Gen AI Lab', time: '12:00 PM - 1:20 PM', room: 'C201 / C202', color: 'blue', start: 12 * 60, duration: 80 },
             { name: 'Lunch', time: '1:20 PM - 2:00 PM', color: 'yellow', start: 13 * 60 + 20, duration: 40 },
             { name: 'Minor', time: '2:30 PM - 3:20 PM', room: 'A410', color: 'pink', start: 14 * 60 + 30, duration: 50 },
-            { name: 'System Design Lab', time: '3:30 PM - 4:50 PM', room: 'A501 / A502', color: 'purple', start: 15 * 60 + 30, duration: 80 },
+            { name: 'System Design Lab', time: '4:30 PM - 5:50 PM', room: 'A501 / A502', color: 'purple', start: 16 * 60 + 30, duration: 80 },
 
         ]
     },
