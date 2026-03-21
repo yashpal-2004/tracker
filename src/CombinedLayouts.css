@@ -30,6 +30,11 @@
     background: linear-gradient(to right, #fffbeb, white);
 }
 
+.timeline-item.free .timeline-content {
+    border-left: 3px solid #6366f1;
+    background: linear-gradient(to right, #f5f3ff, white);
+}
+
 .timeline-marker {
     display: flex;
     flex-direction: column;
@@ -161,6 +166,13 @@
     box-shadow: 0 2px 6px rgba(245, 158, 11, 0.3);
 }
 
+.badge-free {
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    color: white;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 .badge-present {
     background: linear-gradient(135deg, #10b981, #059669);
     color: white;
@@ -269,9 +281,22 @@
 }
 
 .icon-btn.active {
-    background: #fffbeb;
-    border-color: #fbbf24;
-    color: #f59e0b;
+    background: #eef2ff;
+    border-color: #c7d2fe;
+    color: var(--primary);
+}
+
+.icon-btn.active.free {
+    background: #eef2ff;
+    border-color: #6366f1;
+    color: #4f46e5;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+    transform: translateY(-2px);
+}
+
+.icon-btn.active.free:hover {
+    background: #e0e7ff;
+    box-shadow: 0 6px 15px rgba(99, 102, 241, 0.35);
 }
 
 .icon-btn.delete:hover {

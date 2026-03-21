@@ -17,13 +17,13 @@ const HomeDashboard = ({ tasks, todayStr }) => {
         const activeTasks = tasks.filter(t => t.type !== 'friend_meta');
 
         // 1. Attendance Logic
-        const lectures = activeTasks.filter(t => t.type === 'lecture');
-        const totalLectures = lectures.length;
-        const presentLectures = lectures.filter(t => t.present !== false).length;
+        const regularLectures = activeTasks.filter(t => t.type === 'lecture' && !t.isFree);
+        const totalLectures = regularLectures.length;
+        const presentLectures = regularLectures.filter(t => t.present !== false).length;
         const attendancePct = totalLectures > 0 ? (presentLectures / totalLectures) * 100 : 0;
 
         // 2. Pending Logic
-        const completedLectures = lectures.filter(t => t.completed).length;
+        const completedLectures = regularLectures.filter(t => t.completed).length;
         const pendingLectures = totalLectures - completedLectures;
 
         // 3. Heatmap Calculation (Last 14 days)

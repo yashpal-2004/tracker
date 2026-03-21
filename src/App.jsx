@@ -71,8 +71,23 @@ import {
   Table,
   Home,
   Moon,
-  Timer
+  Timer,
+  Coffee
 } from 'lucide-react';
+
+const NotionLogo = ({ size = 16, className = "" }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className={className}
+    xmlns="http://www.w3.org/2000/svg"
+    style={{ display: 'block' }}
+  >
+    <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.217-.793c.28 0 .047-.28.047-.326L20.103.872c0-.093-.42-.14-.56-.14l-14.731.98c-1.167.093-1.68.42-2.194 1.166l-1.587 2.145c0 .047-.14.187.093.187.14 0 .374 0 .56-.14l2.775-1.074.047.234v13.61c0 .56-.327.933-1.074 1.353l-1.353.7c-.187.093-.233.28-.047.373l6.994 3.123c.28.14.467.047.467-.186V8.97l6.621 11.236c.233.373.513.56.98.513l4.195-.187c.233 0 .42-.14.42-.42V4.954c0-.56.327-.933 1.073-1.353l1.354-.7c.186-.093.233-.28.046-.373l-6.994-3.123c-.28-.14-.466-.047-.466.186v11.7l-6.621-11.236c-.234-.373-.514-.56-.98-.513l-4.196.187c-.233 0-.42.14-.42.42v15.201l.047-.234-2.775 1.073z" />
+  </svg>
+);
 
 const DEFAULT_SUBJECTS = [
   "DM Class", "DM Lab", "DVA Class", "DVA Lab",
@@ -376,9 +391,9 @@ function App() {
     const dhruvTotalMarks = gradedTasks.reduce((acc, t) => acc + (Number(t.dhruvMarks) || 0), 0);
     const diff = myTotalMarks - dhruvTotalMarks;
 
-    if (diff > 0) return `You are ahead by ${diff.toFixed(2)}`;
-    if (diff < 0) return `Dhruv is ahead by ${Math.abs(diff).toFixed(2)}`;
-    return `Scores are tied`;
+    if (diff > 0) return { text: `You are ahead by ${diff.toFixed(2)}`, type: 'win' };
+    if (diff < 0) return { text: `Dhruv is ahead by ${Math.abs(diff).toFixed(2)}`, type: 'lose' };
+    return { text: `Scores are tied`, type: 'neutral' };
   }, [tasks]);
 
   const currentTasks = useMemo(() => {
@@ -397,7 +412,7 @@ function App() {
         <BookmarkBar
           activeSubject={activeSubject}
           onSelect={setActiveSubject}
-          leadMsg={leadMsg}
+          leadData={leadMsg}
           time={time}
         />
         <header className="main-header unified-subject-header glass">
@@ -448,7 +463,7 @@ function App() {
         ) : activeSubject === 'Activity Tracker' ? (
           <ActivityView tasks={tasks} subjects={DEFAULT_SUBJECTS} />
         ) : activeSubject === 'Exam Schedule' ? (
-          <ScheduleView tasks={tasks} />
+          <ScheduleView tasks={tasks} currentTime={time} />
         ) : activeSubject === 'Timetable' ? (
           <TimetableView />
         ) : activeSubject === 'Habits' ? (
@@ -667,157 +682,172 @@ function Sidebar({ subjects, activeSubject, onSelect, syncStatus }) {
 
 
 
-function BookmarkBar({ activeSubject, onSelect, leadMsg, time }) {
+function BookmarkBar({ activeSubject, onSelect, leadData, time }) {
   return (
     <div className="bookmark-bar glass unified-bar structured-layout">
       {/* Row 1: Internal Application Navigation */}
       <div className="bookmark-row primary-nav-row">
-        <div className="nav-group section-performance">
-          <button
-            className={`nav-btn ${activeSubject === 'Marks Overview' ? 'active' : ''}`}
-            onClick={() => onSelect('Marks Overview')}
-            title="Global Overview"
-          >
-            <TrendingUp size={16} />
-            <span>Overview</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Detailed Analysis' ? 'active' : ''}`}
-            onClick={() => onSelect('Detailed Analysis')}
-            title="Detailed Analysis"
-          >
-            <BarChart3 size={16} />
-            <span>Analysis</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Activity Tracker' ? 'active' : ''}`}
-            onClick={() => onSelect('Activity Tracker')}
-            title="Personal Tracker"
-          >
-            <Activity size={16} />
-            <span>Tracker</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Focus' ? 'active' : ''}`}
-            onClick={() => onSelect('Focus')}
-            title="Flow State Hub"
-          >
-            <Timer size={16} />
-            <span>Flow</span>
-          </button>
+        {/* Group 1: Insights & Core */}
+        <div className="nav-group-wrapper">
+          <span className="group-label">Core</span>
+          <div className="nav-group section-performance">
+            <button
+              className={`nav-btn ${activeSubject === 'Marks Overview' ? 'active' : ''}`}
+              onClick={() => onSelect('Marks Overview')}
+              title="Global Overview"
+            >
+              <TrendingUp size={16} />
+              <span>Overview</span>
+            </button>
+            <button
+              className={`nav-btn ${activeSubject === 'Detailed Analysis' ? 'active' : ''}`}
+              onClick={() => onSelect('Detailed Analysis')}
+              title="Detailed Analysis"
+            >
+              <BarChart3 size={16} />
+              <span>Analysis</span>
+            </button>
+            <button
+              className={`nav-btn ${activeSubject === 'Activity Tracker' ? 'active' : ''}`}
+              onClick={() => onSelect('Activity Tracker')}
+              title="Personal Tracker"
+            >
+              <Activity size={16} />
+              <span>Tracker</span>
+            </button>
+          </div>
         </div>
 
         <div className="nav-divider-vertical"></div>
 
-        <div className="nav-group section-tasks">
-          <button
-            className={`nav-btn ${activeSubject === 'Pending Work' ? 'active' : ''}`}
-            onClick={() => onSelect('Pending Work')}
-            title="Pending Work"
-          >
-            <Clock size={16} />
-            <span>Pending</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Safe Zone' ? 'active' : ''}`}
-            onClick={() => onSelect('Safe Zone')}
-            title="Skip Manager"
-          >
-            <ShieldCheck size={16} />
-            <span>Skip</span>
-          </button>
+        {/* Group 2: Work & System */}
+        <div className="nav-group-wrapper">
+          <span className="group-label">Work</span>
+          <div className="nav-group section-tasks">
+            <button
+              className={`nav-btn ${activeSubject === 'Pending Work' ? 'active' : ''}`}
+              onClick={() => onSelect('Pending Work')}
+              title="Pending Work"
+            >
+              <Clock size={16} />
+              <span>Pending</span>
+            </button>
+            <button
+              className={`nav-btn ${activeSubject === 'All Lectures' ? 'active' : ''}`}
+              onClick={() => onSelect('All Lectures')}
+              title="Lecture Repo"
+            >
+              <Archive size={16} />
+              <span>Repo</span>
+            </button>
+            <button
+              className={`nav-btn ${activeSubject === 'Safe Zone' ? 'active' : ''}`}
+              onClick={() => onSelect('Safe Zone')}
+              title="Skip Manager"
+            >
+              <ShieldCheck size={16} />
+              <span>Skip</span>
+            </button>
+            <button
+              className={`nav-btn ${activeSubject === 'Timetable' ? 'active' : ''}`}
+              onClick={() => onSelect('Timetable')}
+              title="Weekly Timetable"
+            >
+              <Table size={16} />
+              <span>Timetable</span>
+            </button>
+            <button
+              className={`nav-btn ${activeSubject === 'Exam Schedule' ? 'active' : ''}`}
+              onClick={() => onSelect('Exam Schedule')}
+              title="Academic Cal"
+            >
+              <Calendar size={16} />
+              <span>Calendar</span>
+            </button>
+          </div>
         </div>
 
         <div className="nav-divider-vertical"></div>
 
-        <div className="nav-group section-wellness">
-          <button
-            className={`nav-btn ${activeSubject === 'Habits' ? 'active' : ''}`}
-            onClick={() => onSelect('Habits')}
-            title="Smart Habit Tracker"
-          >
-            <Zap size={16} />
-            <span>Habits</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Sleep' ? 'active' : ''}`}
-            onClick={() => onSelect('Sleep')}
-            title="Sleep Tracker"
-          >
-            <Moon size={16} />
-            <span>Sleep</span>
-          </button>
+        {/* Group 3: Life & Wellness */}
+        <div className="nav-group-wrapper">
+          <span className="group-label">Life</span>
+          <div className="nav-group section-wellness">
+            <button
+              className={`nav-btn ${activeSubject === 'Focus' ? 'active' : ''}`}
+              onClick={() => onSelect('Focus')}
+              title="Flow State Hub"
+            >
+              <Timer size={16} />
+              <span>Flow</span>
+            </button>
+            <button
+              className={`nav-btn ${activeSubject === 'Habits' ? 'active' : ''}`}
+              onClick={() => onSelect('Habits')}
+              title="Smart Habit Tracker"
+            >
+              <Zap size={16} />
+              <span>Habits</span>
+            </button>
+            <button
+              className={`nav-btn ${activeSubject === 'Sleep' ? 'active' : ''}`}
+              onClick={() => onSelect('Sleep')}
+              title="Sleep Tracker"
+            >
+              <Moon size={16} />
+              <span>Sleep</span>
+            </button>
+          </div>
         </div>
 
-        <div className="nav-divider-vertical"></div>
-
-        <div className="nav-group section-resources">
-          <button
-            className={`nav-btn ${activeSubject === 'Timetable' ? 'active' : ''}`}
-            onClick={() => onSelect('Timetable')}
-            title="Weekly Timetable"
-          >
-            <Table size={16} />
-            <span>Timetable</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'All Lectures' ? 'active' : ''}`}
-            onClick={() => onSelect('All Lectures')}
-            title="Lecture Repo"
-          >
-            <Archive size={16} />
-            <span>Repo</span>
-          </button>
-          <button
-            className={`nav-btn ${activeSubject === 'Exam Schedule' ? 'active' : ''}`}
-            onClick={() => onSelect('Exam Schedule')}
-            title="Academic Cal"
-          >
-            <Calendar size={16} />
-            <span>Calendar</span>
-          </button>
-        </div>
-
-        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', paddingLeft: '16px' }}>
           <ExamCountdown />
-          <div style={{ paddingRight: '4px', fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
-            {leadMsg}
+          <div style={{
+            paddingRight: '4px',
+            fontSize: '0.7rem',
+            fontWeight: 800,
+            color: leadData.type === 'win' ? '#10b981' : leadData.type === 'lose' ? '#f59e0b' : '#64748b',
+            textTransform: 'uppercase',
+            letterSpacing: '0.02em',
+            whiteSpace: 'nowrap'
+          }}>
+            {leadData.text}
           </div>
         </div>
       </div>
 
       {/* Row 2: External Links & Status */}
       <div className="bookmark-row secondary-nav-row" style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
-        <div className="nav-group external-links" style={{ width: '100%' }}>
-          <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8', marginRight: '4px' }}>QUICK LINKS:</span>
+        <div className="nav-group external-links" style={{ width: '100%', gap: '12px' }}>
+          <span style={{ fontSize: '0.65rem', fontWeight: 900, color: '#94a3b8', marginRight: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quick Access:</span>
           <a
             href="https://my.newtonschool.co/course/8adqgomb044s/details"
             target="_blank"
             rel="noreferrer"
-            className="bookmark-item"
+            className="bookmark-item premium-link"
             title="Newton School Portal"
           >
-            <Rocket size={14} />
+            <div className="link-icon-wrapper"><Rocket size={14} /></div>
             <span>Newton</span>
           </a>
           <a
             href="https://www.notion.so/Sem-4-2df73a32749f80518d92d53951340894"
             target="_blank"
             rel="noreferrer"
-            className="bookmark-item"
+            className="bookmark-item premium-link"
             title="Notion Study Notes"
           >
-            <FileText size={14} />
+            <div className="link-icon-wrapper"><FileText size={14} /></div>
             <span>Notion</span>
           </a>
           <a
             href="https://dsa-eight-delta.vercel.app/"
             target="_blank"
             rel="noreferrer"
-            className="bookmark-item"
+            className="bookmark-item premium-link"
             title="DSA Tracker"
           >
-            <TrendingUp size={14} />
+            <div className="link-icon-wrapper"><TrendingUp size={14} /></div>
             <span>DSA Tracker</span>
           </a>
         </div>
@@ -825,6 +855,7 @@ function BookmarkBar({ activeSubject, onSelect, leadMsg, time }) {
     </div>
   );
 }
+
 
 function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, activeSubject, friendMeta, onUpdateFriendMeta, threshold }) {
   const [val, setVal] = useState('');
@@ -836,11 +867,13 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [filterMode, setFilterMode] = useState('All');
 
-  const presentCount = tasks.filter(t => t.present !== false).length;
-  const completedCount = tasks.filter(t => t.completed).length;
-  const dhruvCompletedCount = tasks.filter(t => t.dhruvCompleted).length;
-  const totalCount = tasks.length;
+  const regularTasks = tasks.filter(t => !t.isFree);
+  const presentCount = regularTasks.filter(t => t.present !== false).length;
+  const completedCount = regularTasks.filter(t => t.completed).length;
+  const dhruvCompletedCount = regularTasks.filter(t => t.dhruvCompleted).length;
+  const totalCount = regularTasks.length;
   const attendPercent = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0;
   const completePercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const dhruvCompletePercent = totalCount > 0 ? Math.round((dhruvCompletedCount / totalCount) * 100) : 0;
@@ -921,11 +954,18 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
 
   // Calculate the live remote value for Dhruv based on offset logic
   const remoteDhruvCount = useMemo(() => {
-    if (friendMeta?.attendanceOffset !== undefined) {
-      return presentCount + (friendMeta.attendanceOffset || 0);
-    }
     return friendMeta?.attendanceCount ?? presentCount;
   }, [friendMeta, presentCount]);
+
+  const filteredTasks = useMemo(() => {
+    let list = tasks;
+    if (filterMode === 'Pending') list = list.filter(t => !t.completed);
+    else if (filterMode === 'Done') list = list.filter(t => t.completed);
+    else if (filterMode === 'Important') list = list.filter(t => t.important);
+    else if (filterMode === 'Free') list = list.filter(t => t.isFree);
+    else if (filterMode === 'Regular') list = list.filter(t => !t.isFree);
+    return list;
+  }, [tasks, filterMode]);
 
   const [localAttendance, setLocalAttendance] = useState(null);
 
@@ -1019,79 +1059,169 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     <section className={`task-section ${type}-section glass`}>
       {statsBar}
       {/* Keeping a hidden or minimal title for accessibility/structure if needed, but the visual header is now in the portal */}
-      <div className="section-header-compact">
-        <div className="section-title-group">
-          <p className="section-subtitle">{totalCount} total {title.toLowerCase()}</p>
+      <div className="section-header-compact" style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <div className="section-title-group">
+            <p className="section-subtitle" style={{ margin: 0, fontWeight: 800, color: 'var(--primary)' }}>
+              {filterMode} {title} ({filteredTasks.length})
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {['All', 'Pending', 'Done', 'Important', 'Free', 'Regular'].map(mode => (
+              <button
+                key={mode}
+                onClick={() => setFilterMode(mode)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '100px',
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  background: filterMode === mode ? 'var(--primary)' : '#f1f5f9',
+                  color: filterMode === mode ? 'white' : '#64748b',
+                  border: '1px solid',
+                  borderColor: filterMode === mode ? 'var(--primary)' : '#e2e8f0',
+                  boxShadow: filterMode === mode ? '0 4px 10px var(--primary-glow)' : 'none',
+                  transition: 'all 0.2s ease',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {showForm && (
-        <form className="input-row" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }} style={{ position: 'relative', animation: 'section-fade-in 0.3s ease-out' }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <input
-              placeholder={`${title.slice(0, -1)} name`}
-              value={val}
-              onChange={e => setVal(e.target.value)}
-              onFocus={() => {
-                if (type === 'lecture' && suggestions.length > 0) {
-                  setShowSuggestions(true);
-                }
-              }}
-              onBlur={() => {
-                // Delay hiding to allow click on suggestion
-                setTimeout(() => setShowSuggestions(false), 200);
-              }}
-            />
-            {type === 'lecture' && showSuggestions && suggestions.length > 0 && (
-              <div className="autocomplete-dropdown">
-                {suggestions.map((suggestion, index) => (
-                  <div
-                    key={index}
-                    className="autocomplete-item"
-                    onClick={() => handleSuggestionClick(suggestion)}
-                  >
-                    {suggestion}
-                  </div>
-                ))}
+      {showForm && createPortal(
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+          <div className="modal-content glass" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ 
+                  background: 'var(--primary)', 
+                  color: 'white', 
+                  padding: '10px', 
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 8px 16px var(--primary-glow)'
+                }}>
+                  <Plus size={24} />
+                </div>
+                <h3 style={{ margin: 0 }}>Add New {title.slice(0, -1)}</h3>
               </div>
-            )}
+              <button className="close-btn" onClick={() => setShowForm(false)}><X size={20} /></button>
+            </div>
+
+            <form className="modal-fields" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }}>
+              {/* Lecture Name */}
+              <div className="input-group">
+                <label>{title.slice(0, -1)} Name</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    placeholder={`${title.slice(0, -1)} name`}
+                    value={val}
+                    onChange={e => {
+                      setVal(e.target.value);
+                      setShowSuggestions(true);
+                    }}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                    autoFocus
+                  />
+                  {showSuggestions && suggestions.length > 0 && (
+                    <div className="autocomplete-dropdown">
+                      {suggestions.map((s, i) => (
+                        <div
+                          key={i}
+                          className="suggestion-item"
+                          onClick={() => {
+                            setVal(s);
+                            setShowSuggestions(false);
+                          }}
+                        >
+                          {s}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Date */}
+              <div className="input-group">
+                <label>Scheduled Date</label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={e => setDate(e.target.value)}
+                />
+              </div>
+
+              {/* Links Section */}
+              <div className="input-group">
+                <label>{type === 'lecture' ? "Resources & Notes" : "Reference Link"}</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      placeholder={type === 'lecture' ? "Lecture/Notes Link (optional)" : "Link (optional)"}
+                      style={{ width: '100%', paddingLeft: '44px' }}
+                      value={link}
+                      onChange={e => setLink(e.target.value)}
+                    />
+                    <BookOpen size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                  </div>
+
+                  {type === 'lecture' && (
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        placeholder="Notion Notes URL (optional)"
+                        style={{ width: '100%', paddingLeft: '44px' }}
+                        value={notionLink}
+                        onChange={e => setNotionLink(e.target.value)}
+                      />
+                      <div style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5, display: 'flex', alignItems: 'center' }}>
+                        <NotionLogo size={18} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {type === 'quiz' && (
+                <div className="input-group">
+                  <label>Important Questions</label>
+                  <input
+                    placeholder="e.g. Q4, Q7, Topic: BFS..."
+                    value={impQs}
+                    onChange={e => setImpQs(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* Add Button */}
+              <div className="modal-buttons" style={{ marginTop: '20px' }}>
+                <button type="submit" className="save-btn">
+                  <Plus size={20} />
+                  <span>Create {title.slice(0, -1)}</span>
+                </button>
+                <button type="button" className="cancel-btn" onClick={() => setShowForm(false)}>Cancel</button>
+              </div>
+            </form>
           </div>
-          <input
-            type="date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-          />
-          <input
-            placeholder={type === 'lecture' ? "Lecture/Notes Link (optional)" : "Link (optional)"}
-            value={link}
-            onChange={e => setLink(e.target.value)}
-          />
-          {type === 'lecture' && (
-            <input
-              placeholder="Notion Notes URL (optional)"
-              value={notionLink}
-              onChange={e => setNotionLink(e.target.value)}
-            />
-          )}
-          {type === 'quiz' && (
-            <input
-              placeholder="Imp Qs"
-              value={impQs}
-              onChange={e => setImpQs(e.target.value)}
-            />
-          )}
-          <button type="submit" className="add-btn">
-            <Plus size={18} />
-            <span>Add</span>
-          </button>
-        </form>
+        </div>,
+        document.body
       )}
 
       {/* Timeline Layout for Lectures */}
       {type === 'lecture' ? (
         <div className="timeline-container">
-          {tasks.map((task, index) => (
-            <div key={task.id} className={`timeline-item ${task.completed ? 'completed' : ''} ${task.important ? 'important' : ''}`}>
+          {filteredTasks.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem' }}>No matching lectures found</div>
+          ) : filteredTasks.map((task, index) => (
+            <div key={task.id} className={`timeline-item ${task.completed ? 'completed' : ''} ${task.important ? 'important' : ''} ${task.isFree ? 'free' : ''}`}>
               <div className="timeline-marker">
                 <div className="timeline-dot">
                   <span className="dot-number">#{task.number}</span>
@@ -1116,6 +1246,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                   </div>
                   <div className="timeline-badges">
                     {task.autoCreated && <span className="badge badge-auto">✨ Auto</span>}
+                    {task.isFree && <span className="badge badge-free">☕ Free</span>}
                     {task.important && <span className="badge badge-important">⭐ Important</span>}
                     {task.present !== false ? (
                       <span className="badge badge-present">✓ Present</span>
@@ -1150,6 +1281,9 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                     <span>Completed</span>
                   </label>
                   <div className="action-buttons">
+                    <button className={`icon-btn ${task.isFree ? 'active free' : ''}`} onClick={() => onUpdate(task.id, { isFree: !task.isFree })} title="Free Lecture">
+                      <Coffee size={16} fill={task.isFree ? "currentColor" : "none"} />
+                    </button>
                     <button className={`icon-btn ${task.important ? 'active' : ''}`} onClick={() => onUpdate(task.id, { important: !task.important })} title="Important">
                       <Star size={16} fill={task.important ? "currentColor" : "none"} />
                     </button>
@@ -1168,7 +1302,9 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
       ) : ['assignment', 'quiz'].includes(type) ? (
         /* Compact Grid Layout for Assignments & Quizzes */
         <div className="compact-grid">
-          {tasks.map(task => (
+          {filteredTasks.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem' }}>No matching items found</div>
+          ) : filteredTasks.map(task => (
             <div key={task.id} className={`grid-item ${task.completed ? 'completed' : ''} ${task.important ? 'important' : ''}`}>
               <div className="grid-checkbox">
                 <div
@@ -1592,190 +1728,139 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
         </div>
       </div>
 
-      {showForm && (
-        <form className="contest-input-form" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }} style={{ marginBottom: '20px', animation: 'section-fade-in 0.3s ease-out' }}>
-          {/* Contest Name */}
-          <div style={{ marginBottom: '15px', display: 'flex', gap: '15px' }}>
-            <input
-              placeholder="Contest name"
-              value={contestName}
-              onChange={e => setContestName(e.target.value)}
-              style={{ flex: 1, maxWidth: '400px' }}
-            />
-            <input
-              type="date"
-              value={contestDate}
-              onChange={e => setContestDate(e.target.value)}
-              style={{ width: '160px' }}
-            />
-          </div>
+      {showForm && createPortal(
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+          <div className="modal-content glass" onClick={e => e.stopPropagation()} style={{ maxWidth: '650px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ 
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)', 
+                  color: 'white', 
+                  padding: '12px', 
+                  borderRadius: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 8px 16px rgba(245, 158, 11, 0.2)'
+                }}>
+                  <Plus size={24} />
+                </div>
+                <h3 style={{ margin: 0 }}>Add New Contest</h3>
+              </div>
+              <button className="close-btn" onClick={() => setShowForm(false)}><X size={20} /></button>
+            </div>
 
-          {/* Components Row */}
-          <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '15px' }}>
-            {/* Quiz Component */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasQuiz ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasQuiz ? '#a78bfa' : 'inherit' }}>
-                <input
-                  type="checkbox"
-                  checked={hasQuiz}
-                  onChange={e => setHasQuiz(e.target.checked)}
-                />
-                Quiz
-              </label>
-              {hasQuiz && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <form className="modal-fields" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }}>
+              {/* Contest Name & Date */}
+              <div className="input-group">
+                <label>Contest Details</label>
+                <div style={{ display: 'flex', gap: '15px' }}>
+                  <input
+                    placeholder="Contest name"
+                    value={contestName}
+                    onChange={e => setContestName(e.target.value)}
+                    style={{ flex: 1 }}
+                    autoFocus
+                  />
+                  <input
+                    type="date"
+                    value={contestDate}
+                    onChange={e => setContestDate(e.target.value)}
+                    style={{ width: '160px' }}
+                  />
+                </div>
+              </div>
+
+              {/* Components Row */}
+              <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                {/* Quiz Component */}
+                <div style={{ flex: 1, minWidth: '200px', padding: '16px', background: hasQuiz ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255,255,255,0.05)', borderRadius: '16px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid rgba(0,0,0,0.05)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '12px', fontWeight: 800, color: hasQuiz ? '#8b5cf6' : 'inherit' }}>
+                    <input type="checkbox" checked={hasQuiz} onChange={e => setHasQuiz(e.target.checked)} />
+                    Quiz Component
+                  </label>
+                  {hasQuiz && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', color: '#8b5cf6', fontWeight: 800 }}>YOU</span>
+                        <input type="number" placeholder="U" value={quizCorrect} onChange={e => setQuizCorrect(e.target.value)} className="small-input" />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                        <input type="number" placeholder="D" value={dhruvQuizCorrect} onChange={e => setDhruvQuizCorrect(e.target.value)} className="small-input" style={{ borderColor: '#fcd34d' }} />
+                      </div>
+                      <span style={{ alignSelf: 'flex-end', paddingBottom: '8px' }}>/</span>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', opacity: 0.5 }}>TOTAL</span>
+                        <input type="number" placeholder="T" value={quizTotal} onChange={e => setQuizTotal(e.target.value)} className="small-input" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Coding Component */}
+                <div style={{ flex: 1, minWidth: '200px', padding: '16px', background: hasCoding ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255,255,255,0.05)', borderRadius: '16px', border: hasCoding ? '1px solid rgba(59, 130, 246, 0.2)' : '1px solid rgba(0,0,0,0.05)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '12px', fontWeight: 800, color: hasCoding ? '#3b82f6' : 'inherit' }}>
+                    <input type="checkbox" checked={hasCoding} onChange={e => setHasCoding(e.target.checked)} />
+                    Coding Component
+                  </label>
+                  {hasCoding && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', color: '#3b82f6', fontWeight: 800 }}>YOU</span>
+                        <input type="number" placeholder="U" value={codingCorrect} onChange={e => setCodingCorrect(e.target.value)} className="small-input" />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                        <input type="number" placeholder="D" value={dhruvCodingCorrect} onChange={e => setDhruvCodingCorrect(e.target.value)} className="small-input" style={{ borderColor: '#fcd34d' }} />
+                      </div>
+                      <span style={{ alignSelf: 'flex-end', paddingBottom: '8px' }}>/</span>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', opacity: 0.5 }}>TOTAL</span>
+                        <input type="number" placeholder="T" value={codingTotal} onChange={e => setCodingTotal(e.target.value)} className="small-input" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Written Component */}
+              <div style={{ flex: 1, minWidth: '200px', padding: '16px', background: hasWritten ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.05)', borderRadius: '16px', border: hasWritten ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(0,0,0,0.05)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '12px', fontWeight: 800, color: hasWritten ? '#10b981' : 'inherit' }}>
+                  <input type="checkbox" checked={hasWritten} onChange={e => setHasWritten(e.target.checked)} />
+                  Written Component
+                </label>
+                {hasWritten && (
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontSize: '0.65em', color: '#8b5cf6', fontWeight: 800 }}>U</span>
-                      <input
-                        type="number"
-                        placeholder="U"
-                        value={quizCorrect}
-                        onChange={e => setQuizCorrect(e.target.value)}
-                        style={{ width: '55px', padding: '6px' }}
-                        min="0"
-                      />
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <span style={{ fontSize: '0.6rem', color: '#10b981', fontWeight: 800 }}>YOU</span>
+                      <input type="number" placeholder="U" value={writtenCorrect} onChange={e => setWrittenCorrect(e.target.value)} className="small-input" />
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
-                      <input
-                        type="number"
-                        placeholder="D"
-                        value={dhruvQuizCorrect}
-                        onChange={e => setDhruvQuizCorrect(e.target.value)}
-                        style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
-                        min="0"
-                      />
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <span style={{ fontSize: '0.6rem', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                      <input type="number" placeholder="D" value={dhruvWrittenCorrect} onChange={e => setDhruvWrittenCorrect(e.target.value)} className="small-input" style={{ borderColor: '#fcd34d' }} />
                     </div>
-                    <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                    <input
-                      type="number"
-                      placeholder="Total"
-                      value={quizTotal}
-                      onChange={e => setQuizTotal(e.target.value)}
-                      style={{ width: '60px', padding: '6px' }}
-                      min="1"
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
+                    <span style={{ alignSelf: 'flex-end', paddingBottom: '8px' }}>/</span>
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <span style={{ fontSize: '0.6rem', opacity: 0.5 }}>TOTAL</span>
+                      <input type="number" placeholder="T" value={writtenTotal} onChange={e => setWrittenTotal(e.target.value)} className="small-input" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Weights Row */}
+              <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginTop: '15px' }}>
+                {hasQuiz && (
+                  <div style={{ flex: 1, minWidth: '100px', padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, color: '#8b5cf6' }}>Quiz Weight</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <input
                         type="number"
                         placeholder="40"
                         value={quizWeight}
                         onChange={e => setQuizWeight(e.target.value)}
-                        style={{ width: '45px', padding: '6px' }}
-                        min="0"
-                        max="100"
-                        step="0.1"
-                      />
-                      <span style={{ opacity: 0.7, fontSize: '0.7em' }}>%</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Coding Component */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasCoding ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasCoding ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasCoding ? '#60a5fa' : 'inherit' }}>
-                <input
-                  type="checkbox"
-                  checked={hasCoding}
-                  onChange={e => setHasCoding(e.target.checked)}
-                />
-                Coding
-              </label>
-              {hasCoding && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontSize: '0.65em', color: '#60a5fa', fontWeight: 800 }}>U</span>
-                      <input
-                        type="number"
-                        placeholder="U"
-                        value={codingCorrect}
-                        onChange={e => setCodingCorrect(e.target.value)}
-                        style={{ width: '55px', padding: '6px' }}
-                        min="0"
-                      />
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
-                      <input
-                        type="number"
-                        placeholder="D"
-                        value={dhruvCodingCorrect}
-                        onChange={e => setDhruvCodingCorrect(e.target.value)}
-                        style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
-                        min="0"
-                      />
-                    </div>
-                    <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                    <input
-                      type="number"
-                      placeholder="Total"
-                      value={codingTotal}
-                      onChange={e => setCodingTotal(e.target.value)}
-                      style={{ width: '60px', padding: '6px' }}
-                      min="1"
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
-                      <input
-                        type="number"
-                        placeholder="60"
-                        value={codingWeight}
-                        onChange={e => setCodingWeight(e.target.value)}
-                        style={{ width: '45px', padding: '6px' }}
-                        min="0"
-                        max="100"
-                        step="0.1"
-                      />
-                      <span style={{ opacity: 0.7, fontSize: '0.7em' }}>%</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Written Component */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasWritten ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasWritten ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasWritten ? '#34d399' : 'inherit' }}>
-                <input
-                  type="checkbox"
-                  checked={hasWritten}
-                  onChange={e => setHasWritten(e.target.checked)}
-                />
-                Written
-              </label>
-              {hasWritten && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontSize: '0.65em', color: '#10b981', fontWeight: 800 }}>U</span>
-                      <input
-                        type="number"
-                        placeholder="U"
-                        value={writtenCorrect}
-                        onChange={e => setWrittenCorrect(e.target.value)}
-                        style={{ width: '55px', padding: '6px' }}
-                        min="0"
-                      />
-                    </div>
-                    <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                    <input
-                      type="number"
-                      placeholder="Total"
-                      value={writtenCorrect}
-                      onChange={e => setWrittenTotal(e.target.value)}
-                      style={{ width: '70px', padding: '6px' }}
-                      min="1"
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
-                      <input
-                        type="number"
-                        placeholder="30"
-                        value={writtenWeight}
-                        onChange={e => setWrittenWeight(e.target.value)}
-                        style={{ width: '55px', padding: '6px' }}
+                        className="small-input"
                         min="0"
                         max="100"
                         step="0.1"
@@ -1783,17 +1868,57 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
                       <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          </div>
+                )}
+                {hasCoding && (
+                  <div style={{ flex: 1, minWidth: '100px', padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, color: '#3b82f6' }}>Coding Weight</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="number"
+                        placeholder="60"
+                        value={codingWeight}
+                        onChange={e => setCodingWeight(e.target.value)}
+                        className="small-input"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                      />
+                      <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                    </div>
+                  </div>
+                )}
+                {hasWritten && (
+                  <div style={{ flex: 1, minWidth: '100px', padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, color: '#10b981' }}>Written Weight</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="number"
+                        placeholder="30"
+                        value={writtenWeight}
+                        onChange={e => setWrittenWeight(e.target.value)}
+                        className="small-input"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                      />
+                      <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-          {/* Add Button */}
-          <button type="submit" className="add-btn">
-            <Plus size={18} />
-            <span>Add Contest</span>
-          </button>
-        </form>
+              {/* Add Button */}
+              <div className="modal-buttons" style={{ marginTop: '20px' }}>
+                <button type="submit" className="save-btn" style={{ background: '#f59e0b', boxShadow: '0 10px 20px -5px rgba(245, 158, 11, 0.3)' }}>
+                  <Plus size={20} />
+                  <span>Create Contest</span>
+                </button>
+                <button type="button" className="cancel-btn" onClick={() => setShowForm(false)}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
       )}
 
       <div className="task-list" style={{ overflowX: 'auto' }}>
@@ -2145,182 +2270,170 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
         </div>
       </div>
 
-      {showForm && (
-        <form className="contest-input-form" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }} style={{ marginBottom: '20px', animation: 'section-fade-in 0.3s ease-out' }}>
-          {/* Exam Name */}
-          <div style={{ marginBottom: '15px', display: 'flex', gap: '15px' }}>
-            <input
-              placeholder={`${title} name (e.g., ${type === 'midSem' ? 'Mid Term 2024' : 'Finals 2024'})`}
-              value={examName}
-              onChange={e => setExamName(e.target.value)}
-              style={{ flex: 1, maxWidth: '400px' }}
-            />
-            <input
-              type="date"
-              value={examDate}
-              onChange={e => setExamDate(e.target.value)}
-              style={{ width: '160px' }}
-            />
+      {showForm && createPortal(
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+          <div className="modal-content glass" onClick={e => e.stopPropagation()} style={{ maxWidth: '650px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ 
+                  background: 'var(--primary)', 
+                  color: 'white', 
+                  padding: '10px', 
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 8px 16px var(--primary-glow)'
+                }}>
+                  <Plus size={24} />
+                </div>
+                <h3 style={{ margin: 0 }}>Add New Exam</h3>
+              </div>
+              <button className="close-btn" onClick={() => setShowForm(false)}><X size={20} /></button>
+            </div>
+
+            <form className="modal-fields" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }}>
+              {/* Exam Name & Date */}
+              <div className="input-group">
+                <label>{title} Details</label>
+                <div style={{ display: 'flex', gap: '15px' }}>
+                  <input
+                    placeholder={`${title} name (e.g., ${type === 'midSem' ? 'Mid Term 2024' : 'Finals 2024'})`}
+                    value={examName}
+                    onChange={e => setExamName(e.target.value)}
+                    style={{ flex: 1 }}
+                    autoFocus
+                  />
+                  <input
+                    type="date"
+                    value={examDate}
+                    onChange={e => setExamDate(e.target.value)}
+                    style={{ width: '160px' }}
+                  />
+                </div>
+              </div>
+
+              {/* Components Row */}
+              <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                {/* Quiz Component */}
+                <div style={{ flex: 1, minWidth: '200px', padding: '16px', background: hasQuiz ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255,255,255,0.05)', borderRadius: '16px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid rgba(0,0,0,0.05)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '12px', fontWeight: 800, color: hasQuiz ? '#8b5cf6' : 'inherit' }}>
+                    <input type="checkbox" checked={hasQuiz} onChange={e => setHasQuiz(e.target.checked)} />
+                    Quiz Component
+                  </label>
+                  {hasQuiz && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', color: '#8b5cf6', fontWeight: 800 }}>YOU</span>
+                        <input type="number" placeholder="U" value={quizCorrect} onChange={e => setQuizCorrect(e.target.value)} className="small-input" />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                        <input type="number" placeholder="D" value={dhruvQuizCorrect} onChange={e => setDhruvQuizCorrect(e.target.value)} className="small-input" style={{ borderColor: '#fcd34d' }} />
+                      </div>
+                      <span style={{ alignSelf: 'flex-end', paddingBottom: '8px' }}>/</span>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', opacity: 0.5 }}>TOTAL</span>
+                        <input type="number" placeholder="T" value={quizTotal} onChange={e => setQuizTotal(e.target.value)} className="small-input" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Coding Component */}
+                <div style={{ flex: 1, minWidth: '200px', padding: '16px', background: hasCoding ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255,255,255,0.05)', borderRadius: '16px', border: hasCoding ? '1px solid rgba(59, 130, 246, 0.2)' : '1px solid rgba(0,0,0,0.05)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '12px', fontWeight: 800, color: hasCoding ? '#3b82f6' : 'inherit' }}>
+                    <input type="checkbox" checked={hasCoding} onChange={e => setHasCoding(e.target.checked)} />
+                    Coding Component
+                  </label>
+                  {hasCoding && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', color: '#3b82f6', fontWeight: 800 }}>YOU</span>
+                        <input type="number" placeholder="U" value={codingCorrect} onChange={e => setCodingCorrect(e.target.value)} className="small-input" />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                        <input type="number" placeholder="D" value={dhruvCodingCorrect} onChange={e => setDhruvCodingCorrect(e.target.value)} className="small-input" style={{ borderColor: '#fcd34d' }} />
+                      </div>
+                      <span style={{ alignSelf: 'flex-end', paddingBottom: '8px' }}>/</span>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <span style={{ fontSize: '0.6rem', opacity: 0.5 }}>TOTAL</span>
+                        <input type="number" placeholder="T" value={codingTotal} onChange={e => setCodingTotal(e.target.value)} className="small-input" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Written Component */}
+              <div style={{ flex: 1, minWidth: '200px', padding: '16px', background: hasWritten ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.05)', borderRadius: '16px', border: hasWritten ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(0,0,0,0.05)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '12px', fontWeight: 800, color: hasWritten ? '#10b981' : 'inherit' }}>
+                  <input type="checkbox" checked={hasWritten} onChange={e => setHasWritten(e.target.checked)} />
+                  Written Component
+                </label>
+                {hasWritten && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <span style={{ fontSize: '0.6rem', color: '#10b981', fontWeight: 800 }}>YOU</span>
+                      <input type="number" placeholder="U" value={writtenCorrect} onChange={e => setWrittenCorrect(e.target.value)} className="small-input" />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <span style={{ fontSize: '0.6rem', color: '#f59e0b', fontWeight: 800 }}>DHRUV</span>
+                      <input type="number" placeholder="D" value={dhruvWrittenCorrect} onChange={e => setDhruvWrittenCorrect(e.target.value)} className="small-input" style={{ borderColor: '#fcd34d' }} />
+                    </div>
+                    <span style={{ alignSelf: 'flex-end', paddingBottom: '8px' }}>/</span>
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <span style={{ fontSize: '0.6rem', opacity: 0.5 }}>TOTAL</span>
+                      <input type="number" placeholder="T" value={writtenTotal} onChange={e => setWrittenTotal(e.target.value)} className="small-input" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Weights Row */}
+              <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginTop: '15px' }}>
+                {hasQuiz && (
+                  <div style={{ flex: 1, minWidth: '100px', padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, color: '#8b5cf6' }}>Quiz Weight</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input type="number" placeholder="20" value={quizWeight} onChange={e => setQuizWeight(e.target.value)} className="small-input" />
+                      <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                    </div>
+                  </div>
+                )}
+                {hasCoding && (
+                  <div style={{ flex: 1, minWidth: '100px', padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, color: '#3b82f6' }}>Coding Weight</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input type="number" placeholder="30" value={codingWeight} onChange={e => setCodingWeight(e.target.value)} className="small-input" />
+                      <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                    </div>
+                  </div>
+                )}
+                {hasWritten && (
+                  <div style={{ flex: 1, minWidth: '100px', padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 800, color: '#10b981' }}>Written Weight</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input type="number" placeholder="50" value={writtenWeight} onChange={e => setWrittenWeight(e.target.value)} className="small-input" />
+                      <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Add Button */}
+              <div className="modal-buttons" style={{ marginTop: '20px' }}>
+                <button type="submit" className="save-btn">
+                  <Plus size={20} />
+                  <span>Create Exam</span>
+                </button>
+                <button type="button" className="cancel-btn" onClick={() => setShowForm(false)}>Cancel</button>
+              </div>
+            </form>
           </div>
-
-          {/* Components Row */}
-          <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '15px' }}>
-            {/* Quiz Component */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasQuiz ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasQuiz ? '#a78bfa' : 'inherit' }}>
-                <input
-                  type="checkbox"
-                  checked={hasQuiz}
-                  onChange={e => setHasQuiz(e.target.checked)}
-                />
-                Quiz
-              </label>
-              {hasQuiz && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    placeholder="Correct"
-                    value={quizCorrect}
-                    onChange={e => setQuizCorrect(e.target.value)}
-                    style={{ width: '70px', padding: '6px' }}
-                    min="0"
-                  />
-                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                  <input
-                    type="number"
-                    placeholder="Total"
-                    value={quizTotal}
-                    onChange={e => setQuizTotal(e.target.value)}
-                    style={{ width: '70px', padding: '6px' }}
-                    min="1"
-                  />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
-                    <input
-                      type="number"
-                      placeholder="40"
-                      value={quizWeight}
-                      onChange={e => setQuizWeight(e.target.value)}
-                      style={{ width: '55px', padding: '6px' }}
-                      min="0"
-                      max="100"
-                      step="0.1"
-                    />
-                    <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Coding Component */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasCoding ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasCoding ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasCoding ? '#60a5fa' : 'inherit' }}>
-                <input
-                  type="checkbox"
-                  checked={hasCoding}
-                  onChange={e => setHasCoding(e.target.checked)}
-                />
-                Coding
-              </label>
-              {hasCoding && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    placeholder="Correct"
-                    value={codingCorrect}
-                    onChange={e => setCodingCorrect(e.target.value)}
-                    style={{ width: '70px', padding: '6px' }}
-                    min="0"
-                  />
-                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                  <input
-                    type="number"
-                    placeholder="Total"
-                    value={codingTotal}
-                    onChange={e => setCodingTotal(e.target.value)}
-                    style={{ width: '70px', padding: '6px' }}
-                    min="1"
-                  />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
-                    <input
-                      type="number"
-                      placeholder="60"
-                      value={codingWeight}
-                      onChange={e => setCodingWeight(e.target.value)}
-                      style={{ width: '55px', padding: '6px' }}
-                      min="0"
-                      max="100"
-                      step="0.1"
-                    />
-                    <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Written Component */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: hasWritten ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasWritten ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255,255,255,0.1)', minWidth: '200px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9em', fontWeight: 600, color: hasWritten ? '#34d399' : 'inherit' }}>
-                <input
-                  type="checkbox"
-                  checked={hasWritten}
-                  onChange={e => setHasWritten(e.target.checked)}
-                />
-                Written
-              </label>
-              {hasWritten && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    placeholder="Correct"
-                    value={writtenCorrect}
-                    onChange={e => setWrittenCorrect(e.target.value)}
-                    style={{ width: '70px', padding: '6px' }}
-                    min="0"
-                  />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>D</span>
-                    <input
-                      type="number"
-                      placeholder="D"
-                      value={dhruvWrittenCorrect}
-                      onChange={e => setDhruvWrittenCorrect(e.target.value)}
-                      style={{ width: '55px', padding: '6px', borderColor: '#fcd34d' }}
-                      min="0"
-                    />
-                  </div>
-                  <span style={{ opacity: 0.5, fontWeight: 500 }}>/</span>
-                  <input
-                    type="number"
-                    placeholder="Total"
-                    value={writtenTotal}
-                    onChange={e => setWrittenTotal(e.target.value)}
-                    style={{ width: '60px', padding: '6px' }}
-                    min="1"
-                  />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
-                    <input
-                      type="number"
-                      placeholder="30"
-                      value={writtenWeight}
-                      onChange={e => setWrittenWeight(e.target.value)}
-                      style={{ width: '55px', padding: '6px' }}
-                      min="0"
-                      max="100"
-                      step="0.1"
-                    />
-                    <span style={{ opacity: 0.7, fontSize: '0.9em' }}>%</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Add Button */}
-          <button type="submit" className="add-btn">
-            <Plus size={18} />
-            <span>Add Exam</span>
-          </button>
-        </form>
+        </div>,
+        document.body
       )}
 
       <div className="task-list" style={{ overflowX: 'auto' }}>
@@ -2528,287 +2641,206 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
     onSave(updates);
   };
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content glass" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Edit {task.type}</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ 
+              background: 'var(--primary)', 
+              color: 'white', 
+              padding: '10px', 
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 8px 16px var(--primary-glow)'
+            }}>
+              <Edit2 size={24} />
+            </div>
+            <h3 style={{ margin: 0 }}>Edit {task.type.charAt(0).toUpperCase() + task.type.slice(1)}</h3>
+          </div>
           <button className="close-btn" onClick={onClose}><X size={20} /></button>
         </div>
+
         <div className="modal-fields">
-          <label>Name</label>
-          <input value={name} onChange={e => setName(e.target.value)} />
-          <label>Number</label>
-          <input type="number" value={number} onChange={e => setNumber(e.target.value)} />
-          <label>Date</label>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-          {task.type === 'lecture' && (
-            <>
-              <label>Lecture Link / Notes URL</label>
-              <input value={link} onChange={e => setLink(e.target.value)} />
-              <label>Notion Notes URL</label>
-              <input value={notionLink} onChange={e => setNotionLink(e.target.value)} />
-            </>
-          )}
-          {(task.type === 'assignment' || task.type === 'quiz') && (
-            <>
-              <label>Link</label>
-              <input value={link} onChange={e => setLink(e.target.value)} />
-            </>
-          )}
-          {task.type === 'quiz' && (
-            <>
-              <label>Imp Qs</label>
-              <input value={impQs} onChange={e => setImpQs(e.target.value)} />
-            </>
-          )}
-          {(task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') && (
-            <>
-              {/* Quiz Component */}
-              <div style={{ marginBottom: '15px', padding: '12px', background: hasQuiz ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid rgba(255,255,255,0.1)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '10px', fontWeight: 600 }}>
-                  <input
-                    type="checkbox"
-                    checked={hasQuiz}
-                    onChange={e => setHasQuiz(e.target.checked)}
+          {/* Main Info Section */}
+          <div className="input-group">
+            <label>Title & Identifier</label>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <input 
+                style={{ flex: 3 }}
+                placeholder="Name"
+                value={name} 
+                onChange={e => setName(e.target.value)} 
+              />
+              <input 
+                style={{ flex: 1 }}
+                type="number" 
+                placeholder="No."
+                value={number} 
+                onChange={e => setNumber(e.target.value)} 
+              />
+            </div>
+          </div>
+
+          <div className="input-group">
+            <label>Scheduled Date</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+          </div>
+
+          {/* Links Section */}
+          {(task.type === 'lecture' || task.type === 'assignment' || task.type === 'quiz') && (
+            <div className="input-group">
+              <label>Resources & Notes</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ position: 'relative' }}>
+                  <input 
+                    placeholder={task.type === 'lecture' ? "Lecture Link / Notes URL" : "Resource Link"}
+                    style={{ width: '100%', paddingLeft: '44px' }}
+                    value={link} 
+                    onChange={e => setLink(e.target.value)} 
                   />
-                  <span>Quiz Component</span>
+                  <BookOpen size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                </div>
+                
+                {task.type === 'lecture' && (
+                  <div style={{ position: 'relative' }}>
+                    <input 
+                      placeholder="Notion Notes URL"
+                      style={{ width: '100%', paddingLeft: '44px' }}
+                      value={notionLink} 
+                      onChange={e => setNotionLink(e.target.value)} 
+                    />
+                    <div style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5, display: 'flex', alignItems: 'center' }}>
+                      <NotionLogo size={18} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {task.type === 'quiz' && (
+            <div className="input-group">
+              <label>Important Questions</label>
+              <input 
+                placeholder="e.g. Q4, Q7, Topic: BFS..."
+                value={impQs} 
+                onChange={e => setImpQs(e.target.value)} 
+              />
+            </div>
+          )}
+
+          {/* Performance Data for Contests/Exams */}
+          {(task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 850, color: 'var(--primary)', opacity: 0.8 }}>Performance Breakdown</label>
+              
+              {/* Quiz Component */}
+              <div style={{ 
+                padding: '16px', 
+                background: hasQuiz ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255,255,255,0.05)', 
+                borderRadius: '20px', 
+                border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid rgba(0,0,0,0.05)',
+                transition: 'all 0.3s'
+              }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '16px', fontWeight: 800 }}>
+                  <input type="checkbox" checked={hasQuiz} onChange={e => setHasQuiz(e.target.checked)} />
+                  <span style={{ color: hasQuiz ? '#8b5cf6' : 'inherit' }}>Quiz Component</span>
                 </label>
                 {hasQuiz && (
-                  <>
-                    <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Questions (Correct / Total)</label>
-                    <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', color: '#8b5cf6', fontWeight: 800 }}>YOU</span>
-                        <input
-                          type="number"
-                          value={quizCorrect}
-                          onChange={e => setQuizCorrect(e.target.value)}
-                          placeholder="U"
-                          min="0"
-                          style={{ width: '100%' }}
-                        />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <div style={{ flex: 1 }} className="input-group">
+                        <label style={{ fontSize: '0.65rem' }}>Your Score</label>
+                        <input type="number" value={quizCorrect} onChange={e => setQuizCorrect(e.target.value)} placeholder="0" min="0" />
                       </div>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>X</span>
-                        <input
-                          type="number"
-                          value={dhruvQuizCorrect}
-                          onChange={e => setDhruvQuizCorrect(e.target.value)}
-                          placeholder="D"
-                          min="0"
-                          style={{ width: '100%', borderColor: '#fcd34d' }}
-                        />
+                      <div style={{ flex: 1 }} className="input-group">
+                        <label style={{ fontSize: '0.65rem' }}>Dhruv Score</label>
+                        <input type="number" value={dhruvQuizCorrect} onChange={e => setDhruvQuizCorrect(e.target.value)} placeholder="0" min="0" style={{ borderColor: '#fcd34d' }} />
                       </div>
-                      <span style={{ alignSelf: 'flex-end', paddingBottom: '10px' }}>/</span>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', opacity: 0.5, fontWeight: 800 }}>TOTAL</span>
-                        <input
-                          type="number"
-                          value={quizTotal}
-                          onChange={e => setQuizTotal(e.target.value)}
-                          placeholder="T"
-                          min="1"
-                          style={{ width: '100%' }}
-                        />
+                      <div style={{ flex: 1 }} className="input-group">
+                        <label style={{ fontSize: '0.65rem' }}>Total Marks</label>
+                        <input type="number" value={quizTotal} onChange={e => setQuizTotal(e.target.value)} placeholder="1" min="1" />
                       </div>
                     </div>
-                    <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Weight (%)</label>
-                    <input
-                      type="number"
-                      value={quizWeight}
-                      onChange={e => setQuizWeight(e.target.value)}
-                      placeholder="Weight %"
-                      min="0"
-                      max="100"
-                      style={{ width: '100%' }}
-                    />
-                  </>
+                  </div>
                 )}
               </div>
 
               {/* Coding Component */}
-              <div style={{ marginBottom: '15px', padding: '12px', background: hasCoding ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasCoding ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255,255,255,0.1)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '10px', fontWeight: 600 }}>
-                  <input
-                    type="checkbox"
-                    checked={hasCoding}
-                    onChange={e => setHasCoding(e.target.checked)}
-                  />
-                  <span>Coding Component</span>
+              <div style={{ 
+                padding: '16px', 
+                background: hasCoding ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.05)', 
+                borderRadius: '20px', 
+                border: hasCoding ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(0,0,0,0.05)',
+                transition: 'all 0.3s'
+              }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '16px', fontWeight: 800 }}>
+                  <input type="checkbox" checked={hasCoding} onChange={e => setHasCoding(e.target.checked)} />
+                  <span style={{ color: hasCoding ? '#10b981' : 'inherit' }}>Coding Component</span>
                 </label>
                 {hasCoding && (
-                  <>
-                    <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Questions (Correct / Total)</label>
-                    <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', color: '#10b981', fontWeight: 800 }}>YOU</span>
-                        <input
-                          type="number"
-                          value={codingCorrect}
-                          onChange={e => setCodingCorrect(e.target.value)}
-                          placeholder="U"
-                          min="0"
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>X</span>
-                        <input
-                          type="number"
-                          value={dhruvCodingCorrect}
-                          onChange={e => setDhruvCodingCorrect(e.target.value)}
-                          placeholder="X"
-                          min="0"
-                          style={{ width: '100%', borderColor: '#fcd34d' }}
-                        />
-                      </div>
-                      <span style={{ alignSelf: 'flex-end', paddingBottom: '10px' }}>/</span>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', opacity: 0.5, fontWeight: 800 }}>TOTAL</span>
-                        <input
-                          type="number"
-                          value={codingTotal}
-                          onChange={e => setCodingTotal(e.target.value)}
-                          placeholder="T"
-                          min="1"
-                          style={{ width: '100%' }}
-                        />
-                      </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }} className="input-group">
+                      <label style={{ fontSize: '0.65rem' }}>Your Score</label>
+                      <input type="number" value={codingCorrect} onChange={e => setCodingCorrect(e.target.value)} placeholder="0" min="0" />
                     </div>
-                    <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Weight (%)</label>
-                    <input
-                      type="number"
-                      value={codingWeight}
-                      onChange={e => setCodingWeight(e.target.value)}
-                      placeholder="Weight %"
-                      min="0"
-                      max="100"
-                      style={{ width: '100%' }}
-                    />
-                  </>
+                    <div style={{ flex: 1 }} className="input-group">
+                      <label style={{ fontSize: '0.65rem' }}>Dhruv Score</label>
+                      <input type="number" value={dhruvCodingCorrect} onChange={e => setDhruvCodingCorrect(e.target.value)} placeholder="0" min="0" style={{ borderColor: '#fcd34d' }} />
+                    </div>
+                    <div style={{ flex: 1 }} className="input-group">
+                      <label style={{ fontSize: '0.65rem' }}>Total Marks</label>
+                      <input type="number" value={codingTotal} onChange={e => setCodingTotal(e.target.value)} placeholder="1" min="1" />
+                    </div>
+                  </div>
                 )}
               </div>
 
-              {/* Written Component */}
-              <div style={{ marginBottom: '15px', padding: '12px', background: hasWritten ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '8px', border: hasWritten ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(255,255,255,0.1)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '10px', fontWeight: 600 }}>
-                  <input
-                    type="checkbox"
-                    checked={hasWritten}
-                    onChange={e => setHasWritten(e.target.checked)}
-                  />
-                  <span>Written Component</span>
-                </label>
-                {hasWritten && (
-                  <>
-                    <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Questions (Correct / Total)</label>
-                    <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', color: '#ef4444', fontWeight: 800 }}>YOU</span>
-                        <input
-                          type="number"
-                          value={writtenCorrect}
-                          onChange={e => setWrittenCorrect(e.target.value)}
-                          placeholder="U"
-                          min="0"
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', color: '#f59e0b', fontWeight: 800 }}>X</span>
-                        <input
-                          type="number"
-                          value={dhruvWrittenCorrect}
-                          onChange={e => setDhruvWrittenCorrect(e.target.value)}
-                          placeholder="X"
-                          min="0"
-                          style={{ width: '100%', borderColor: '#fcd34d' }}
-                        />
-                      </div>
-                      <span style={{ alignSelf: 'flex-end', paddingBottom: '10px' }}>/</span>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.65em', opacity: 0.5, fontWeight: 800 }}>TOTAL</span>
-                        <input
-                          type="number"
-                          value={writtenTotal}
-                          onChange={e => setWrittenTotal(e.target.value)}
-                          placeholder="T"
-                          min="1"
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                    </div>
-                    <label style={{ fontSize: '0.9em', opacity: 0.8 }}>Weight (%)</label>
-                    <input
-                      type="number"
-                      value={writtenWeight}
-                      onChange={e => setWrittenWeight(e.target.value)}
-                      placeholder="Weight %"
-                      min="0"
-                      max="100"
-                      style={{ width: '100%' }}
-                    />
-                  </>
-                )}
-              </div>
-            </>
-          )}
-
-          {(task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') && (
-            <div style={{
-              padding: '12px',
-              background: 'rgba(16, 185, 129, 0.1)',
-              borderRadius: '8px',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-              marginTop: '10px'
-            }}>
-              <div style={{ display: 'flex', gap: '15px' }}>
-                <strong style={{ color: '#10b981' }}>
-                  Your Marks: {calculateContestMarks().marks}/{calculateContestMarks().maxMarks}
-                </strong>
-                <strong style={{ color: '#f59e0b' }}>
-                  X: {calculateContestMarks().dhruvMarks}/{calculateContestMarks().maxMarks}
-                </strong>
-              </div>
-              <div style={{ fontSize: '0.85em', opacity: 0.8, marginTop: '5px' }}>
-                {hasQuiz && `Quiz: ${quizWeight}%`}
-                {hasQuiz && hasCoding && ' | '}
-                {hasCoding && `Coding: ${codingWeight}%`}
-                {(hasQuiz || hasCoding) && hasWritten && ' | '}
-                {hasWritten && `Written: ${writtenWeight}%`}
+              {/* Summary of Marks */}
+              <div style={{ 
+                padding: '24px', 
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(59, 130, 246, 0.1))',
+                borderRadius: '24px',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                marginTop: '10px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#059669', textTransform: 'uppercase' }}>Your Projection</span>
+                    <strong style={{ fontSize: '1.4rem', color: '#059669' }}>{calculateContestMarks().marks} / {calculateContestMarks().maxMarks}</strong>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'right' }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#d97706', textTransform: 'uppercase' }}>Dhruv Projection</span>
+                    <strong style={{ fontSize: '1.4rem', color: '#d97706' }}>{calculateContestMarks().dhruvMarks} / {calculateContestMarks().maxMarks}</strong>
+                  </div>
+                </div>
               </div>
             </div>
           )}
         </div>
-        <div className="modal-buttons">
+
+        <div className="modal-buttons" style={{ marginTop: '30px' }}>
           <button className="save-btn" onClick={handleSave}>
-            <Save size={18} />
-            <span>Save Changes</span>
+            <Save size={20} />
+            <span>Apply Changes</span>
           </button>
-          <button className="cancel-btn" onClick={onClose}>Cancel</button>
+          <button className="cancel-btn" onClick={onClose}>Discard</button>
         </div>
-      </div >
-    </div >
+      </div>
+    </div>,
+    document.body
   );
 }
 
 
 
-const NotionLogo = ({ size = 16, className = "" }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    className={className}
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.217-.793c.28 0 .047-.28.047-.326L20.103.872c0-.093-.42-.14-.56-.14l-14.731.98c-1.167.093-1.68.42-2.194 1.166l-1.587 2.145c0 .047-.14.187.093.187.14 0 .374 0 .56-.14l2.775-1.074.047.234v13.61c0 .56-.327.933-1.074 1.353l-1.353.7c-.187.093-.233.28-.047.373l6.994 3.123c.28.14.467.047.467-.186V8.97l6.621 11.236c.233.373.513.56.98.513l4.195-.187c.233 0 .42-.14.42-.42V4.954c0-.56.327-.933 1.073-1.353l1.354-.7c.186-.093.233-.28.046-.373l-6.994-3.123c-.28-.14-.466-.047-.466.186v11.7l-6.621-11.236c-.234-.373-.514-.56-.98-.513l-4.196.187c-.233 0-.42.14-.42.42v15.201l.047-.234-2.775 1.073z" />
-  </svg>
-);
-
-function ContestScheduleTable() {
+const ContestScheduleTable = () => {
   const now = new Date();
   return (
     <div className="overall-card glass contest-schedule-card">
@@ -3015,8 +3047,8 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
 
     // Attendance component
     const currentAtt = isDhruv
-      ? (((data.class.dhruvAttendancePercent || 0) * 0.6) + ((data.lab.dhruvAttendancePercent || 0) * 0.4))
-      : (((data.class.attendancePercent || 0) * 0.6) + ((data.lab.attendancePercent || 0) * 0.4));
+      ? (((data.class.dhruvAttendancePercent || 0) * 0.5) + ((data.lab.dhruvAttendancePercent || 0) * 0.5))
+      : (((data.class.attendancePercent || 0) * 0.5) + ((data.lab.attendancePercent || 0) * 0.5));
 
     const attScore = (currentAtt / 100) * (weights.attendance || 0) * 100;
 
@@ -3061,7 +3093,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
 
       const subjectTasks = tasks.filter(t => t.subjectName === s);
       const getCategoryStats = (type) => {
-        const filtered = subjectTasks.filter(t => t.type === type);
+        const filtered = subjectTasks.filter(t => t.type === type && !t.isFree);
         const total = filtered.length;
         const done = filtered.filter(t => t.completed).length;
         const totalMarks = filtered.reduce((acc, t) => acc + (t.marks || 0), 0);
@@ -3075,7 +3107,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
         return { total, done, percent, totalMarks, dhruvTotalMarks, maxMarks };
       };
 
-      const lects = subjectTasks.filter(t => t.type === 'lecture');
+      const lects = subjectTasks.filter(t => t.type === 'lecture' && !t.isFree);
       const attCount = lects.filter(t => t.present !== false).length;
 
       // Thorough lookup for friendMeta in SummaryView
@@ -3122,8 +3154,8 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
     let grandTotalCompleted = 0;
 
     const items = Object.entries(subjectGroups).map(([name, data]) => {
-      const attWeighted = ((data.class.attendancePercent || 0) * 0.6) + ((data.lab.attendancePercent || 0) * 0.4);
-      const dhruvAttWeighted = ((data.class.dhruvAttendancePercent || 0) * 0.6) + ((data.lab.dhruvAttendancePercent || 0) * 0.4);
+      const attWeighted = ((data.class.attendancePercent || 0) * 0.5) + ((data.lab.attendancePercent || 0) * 0.5);
+      const dhruvAttWeighted = ((data.class.dhruvAttendancePercent || 0) * 0.5) + ((data.lab.dhruvAttendancePercent || 0) * 0.5);
       const compWeighted = ((data.class.completionPercent || 0) * 0.5) + ((data.lab.completionPercent || 0) * 0.5);
 
       totalAttendanceWeighted += attWeighted;
@@ -3182,7 +3214,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
     const pL = item.lab.attendanceCount;
     const tL = item.lab.total;
     const targetW = target / 100;
-    const currentW = (item.class.attendancePercent * 0.6) + (item.lab.attendancePercent * 0.4);
+    const currentW = (item.class.attendancePercent * 0.5) + (item.lab.attendancePercent * 0.5);
 
     if (tC === 0 || tL === 0) return null;
 
@@ -3207,18 +3239,19 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
       return { msg, status: skipC > 0 || skipL > 0 ? 'safe' : 'warning' };
     } else {
       // Needs
-      const targetC = (targetW - 0.4 * (pL / tL)) / 0.6;
-      const targetL = (targetW - 0.6 * (pC / tC)) / 0.4;
+      const targetC = (targetW - 0.5 * (pL / tL)) / 0.5;
+      const targetL = (targetW - 0.5 * (pC / tC)) / 0.5;
+      
       const needRatioC = 1 - targetC;
       const needRatioL = 1 - targetL;
 
       let msg = "";
       if (targetC > 1 && targetL > 1) {
         msg = "DANGER! Must attend BOTH Class & Lab";
-      } else if (targetC > 1) {
+      } else if (targetC >= 1) {
         const needL = Math.ceil((targetL * tL - pL) / needRatioL);
         msg = `DANGER! Attend next ${needL} Labs (Cls alone not enough)`;
-      } else if (targetL > 1) {
+      } else if (targetL >= 1) {
         const needC = Math.ceil((targetC * tC - pC) / needRatioC);
         msg = `DANGER! Attend next ${needC} Class (Lab alone not enough)`;
       } else {
@@ -3505,7 +3538,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
 
               <div className="dual-progress-section">
                 <div className="metric-column">
-                  <span className="metric-hdr">Attendance (60/40)</span>
+                  <span className="metric-hdr">Attendance (50/50)</span>
                   <div className="detail-row">
                     <div className="detail-label">
                       <span>Class</span>
@@ -3643,7 +3676,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
             </h3>
             <div style={{ display: 'flex', gap: '12px' }}>
               <div style={{ padding: '8px 16px', borderRadius: '100px', background: '#eff6ff', color: '#3b82f6', fontSize: '0.85rem', fontWeight: 700, border: '1px solid #dbeafe' }}>
-                {tasks.filter(t => t.type === 'lecture' && !t.completed).length} Total Pending
+                {tasks.filter(t => t.type === 'lecture' && !t.completed && !t.isFree).length} Total Pending
               </div>
             </div>
           </div>
@@ -3653,7 +3686,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '24px' }}>
               {subjects.map(subjectName => {
                 const pendingTasks = tasks
-                  .filter(t => t.subjectName === subjectName && t.type === 'lecture' && !t.completed)
+                  .filter(t => t.subjectName === subjectName && t.type === 'lecture' && !t.completed && !t.isFree)
                   .sort((a, b) => new Date(a.date || a.createdAt) - new Date(b.date || b.createdAt));
 
                 if (pendingTasks.length === 0) return null;
@@ -3935,7 +3968,7 @@ function SafeZoneView({ tasks, subjects, threshold, setThreshold }) {
       }
 
       const subjectTasks = tasks.filter(t => t.subjectName === s);
-      const lects = subjectTasks.filter(t => t.type === 'lecture');
+      const lects = subjectTasks.filter(t => t.type === 'lecture' && !t.isFree);
       const attCount = lects.filter(t => t.present !== false).length;
 
       const stats = {
@@ -3960,7 +3993,7 @@ function SafeZoneView({ tasks, subjects, threshold, setThreshold }) {
     // req >= (tPct - otherContrib) / weight
     const req = (tPct - otherContrib) / weight;
 
-    if (req > 1) return { status: 'danger', msg: 'Unreachable', sub: 'Maximize Other' };
+    if (req >= 1) return { status: 'danger', msg: 'Unreachable', sub: 'Maximize Other' };
     if (req <= 0) return { status: 'safe', msg: 'MAX', sub: 'Always Safe' };
 
     const current = stats.attendanceCount / stats.total;
@@ -4005,18 +4038,18 @@ function SafeZoneView({ tasks, subjects, threshold, setThreshold }) {
         </div>
         <p style={{ color: '#64748b', fontSize: '0.95rem', maxWidth: '600px' }}>
           Adjust the slider to simulate different attendance targets. Calculations are based on a
-          <strong style={{ color: '#334155' }}> 60% Class / 40% Lab</strong> weighted split.
+          <strong style={{ color: '#334155' }}> 50% Class / 50% Lab</strong> weighted split.
         </p>
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '24px' }}>
         {Object.entries(subjectGroups).map(([name, item]) => {
-          const weighted = (item.class.attendancePercent * 0.6 + item.lab.attendancePercent * 0.4).toFixed(1);
+          const weighted = (item.class.attendancePercent * 0.5 + item.lab.attendancePercent * 0.5).toFixed(1);
           const isSafe = parseFloat(weighted) >= target;
 
           // Analyze Components
-          const classZone = calculateZone(item.class, 0.6, item.lab, 0.4, target);
-          const labZone = calculateZone(item.lab, 0.4, item.class, 0.6, target);
+          const classZone = calculateZone(item.class, 0.5, item.lab, 0.5, target);
+          const labZone = calculateZone(item.lab, 0.5, item.class, 0.5, target);
 
           return (
             <div key={name} className="glass" style={{
@@ -4040,7 +4073,7 @@ function SafeZoneView({ tasks, subjects, threshold, setThreshold }) {
               <div style={{ display: 'flex', gap: '16px' }}>
                 {/* Class Box */}
                 <div style={{ flex: 1, background: 'white', padding: '16px', borderRadius: '16px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Class (60%)</span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Class (50%)</span>
                   <div style={{ fontSize: classZone.status === 'nodata' ? '1.2rem' : '2rem', fontWeight: 900, color: classZone.status === 'safe' ? '#10b981' : (classZone.status === 'nodata' ? '#cbd5e1' : '#f59e0b'), lineHeight: 1 }}>
                     {classZone.msg}
                   </div>
@@ -4053,7 +4086,7 @@ function SafeZoneView({ tasks, subjects, threshold, setThreshold }) {
 
                 {/* Lab Box */}
                 <div style={{ flex: 1, background: 'white', padding: '16px', borderRadius: '16px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Lab (40%)</span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Lab (50%)</span>
                   <div style={{ fontSize: labZone.status === 'nodata' ? '1.2rem' : '2rem', fontWeight: 900, color: labZone.status === 'safe' ? '#10b981' : (labZone.status === 'nodata' ? '#cbd5e1' : '#f59e0b'), lineHeight: 1 }}>
                     {labZone.msg}
                   </div>
@@ -4194,8 +4227,8 @@ function ActivityView({ tasks, subjects }) {
   );
 }
 
-function ScheduleView({ tasks }) {
-  const now = new Date();
+function ScheduleView({ tasks, currentTime }) {
+  const now = currentTime || new Date();
 
   // Helper to find actual contest task from firestore tasks
   const findActualContest = (scheduledName) => {
@@ -4278,9 +4311,10 @@ function ScheduleView({ tasks }) {
         </h3>
         <div className="timeline-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
           {CONTEST_SCHEDULE.map((event, index) => {
-            const eventDate = new Date(event.date);
-            const isPast = eventDate < now;
-            const isNext = !isPast && (index === 0 || new Date(CONTEST_SCHEDULE[index - 1].date) < now);
+            const dateObj = new Date(event.date);
+            const isPast = new Date(dateObj).setHours(23, 59, 59) < now;
+            const prevEventPast = index === 0 || new Date(CONTEST_SCHEDULE[index - 1].date).setHours(23, 59, 59) < now;
+            const isNext = !isPast && prevEventPast;
             const actualTask = findActualContest(event.name);
 
             return (
@@ -4296,7 +4330,7 @@ function ScheduleView({ tasks }) {
                 flexDirection: 'column',
                 gap: '8px'
               }}>
-                {isNext && <div style={{ position: 'absolute', top: 0, right: 0, background: 'var(--primary)', color: 'white', fontSize: '0.6rem', padding: '4px 10px', fontWeight: 900, borderRadius: '0 0 0 12px' }}>NEXT UP</div>}
+                {(isNext && !actualTask) && <div style={{ position: 'absolute', top: 0, right: 0, background: 'var(--primary)', color: 'white', fontSize: '0.6rem', padding: '4px 10px', fontWeight: 900, borderRadius: '0 0 0 12px' }}>NEXT UP</div>}
                 {actualTask && <div style={{ position: 'absolute', top: 0, right: 0, background: '#10b981', color: 'white', fontSize: '0.6rem', padding: '4px 10px', fontWeight: 900, borderRadius: '0 0 0 12px' }}>DATA SYNCED</div>}
 
                 <div>
@@ -4395,11 +4429,12 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
   }, [tasks, filterSubject, searchQuery]);
 
   const stats = useMemo(() => {
-    const total = allLectures.length;
+    const regularLectures = allLectures.filter(t => !t.isFree);
+    const total = regularLectures.length;
     if (total === 0) return { total: 0, attendance: 0, completion: 0 };
 
-    const present = allLectures.filter(t => t.present !== false).length;
-    const completed = allLectures.filter(t => t.completed).length;
+    const present = regularLectures.filter(t => t.present !== false).length;
+    const completed = regularLectures.filter(t => t.completed).length;
 
     return {
       total,
@@ -4523,7 +4558,7 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
             </div>
           ) : (
             allLectures.map(task => (
-              <div key={task.id} className={`task-item ${task.completed ? 'completed' : ''} ${task.important ? 'important-row' : ''}`}>
+              <div key={task.id} className={`task-item ${task.completed ? 'completed' : ''} ${task.important ? 'important-row' : ''} ${task.isFree ? 'free-row' : ''}`}>
                 <div className="col-subject" style={{ flex: '0 0 100px', opacity: 0.8, fontSize: '0.9em', fontWeight: 700 }}>
                   {task.subjectName}
                 </div>
@@ -4541,6 +4576,7 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
                       ) : (
                         <span className="no-notes">
                           {task.name}
+                          {task.isFree && <span className="badge badge-free" style={{ marginLeft: '8px', fontSize: '0.65em', padding: '2px 6px' }}>☕ Free</span>}
                         </span>
                       )}
                       {task.notionUrl && (
@@ -4590,6 +4626,13 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
                 </label>
                 <div className="col-actions">
                   <div className="task-actions">
+                    <button
+                      className={`star-btn ${task.isFree ? 'active free' : ''}`}
+                      onClick={() => onUpdate(task.id, { isFree: !task.isFree })}
+                      title="Free Lecture"
+                    >
+                      <Coffee size={18} fill={task.isFree ? "currentColor" : "none"} />
+                    </button>
                     <button
                       className={`star-btn ${task.important ? 'active' : ''}`}
                       onClick={() => onUpdate(task.id, { important: !task.important })}
@@ -4645,31 +4688,31 @@ function ExamCountdown({ now: externalNow }) {
         return new Date(y, m - 1, d, 9, 0, 0);
       };
 
-      // Get next contest
-      const upcomingContest = CONTEST_SCHEDULE
-        .map(c => ({ ...c, dateObj: getTargetAt9AM(c.date) }))
-        .filter(c => c.dateObj > now)
-        .sort((a, b) => a.dateObj - b.dateObj)[0];
+      // Find absolute next milestone
+      const milestones = [
+        ...CONTEST_SCHEDULE.map(c => ({
+          label: c.name,
+          dateObj: getTargetAt9AM(c.date),
+          type: 'contest'
+        })),
+        {
+          label: 'Mid Sem',
+          dateObj: getTargetAt9AM(EXAM_DATES.midSem),
+          type: 'exam'
+        },
+        {
+          label: 'End Sem',
+          dateObj: getTargetAt9AM(EXAM_DATES.endSem),
+          type: 'exam'
+        }
+      ].filter(m => m.dateObj > now)
+       .sort((a, b) => a.dateObj - b.dateObj);
 
-      const midDate = getTargetAt9AM(EXAM_DATES.midSem);
-      const endDate = getTargetAt9AM(EXAM_DATES.endSem);
-
-      let targetDate;
-      let label;
-      let type = 'exam';
-
-      // Determine what's next
-      if (upcomingContest && upcomingContest.dateObj < midDate) {
-        targetDate = upcomingContest.dateObj;
-        label = upcomingContest.name;
-        type = 'contest';
-      } else if (now < midDate) {
-        targetDate = midDate;
-        label = 'Mid Sem';
-      } else {
-        targetDate = endDate;
-        label = 'End Sem';
+      if (milestones.length === 0) {
+        return { days: 0, hours: 0, minutes: 0, seconds: 0, label: '', type: 'exam', expired: true };
       }
+
+      const { label, dateObj: targetDate, type } = milestones[0];
 
       const diff = targetDate - now;
 
@@ -4720,8 +4763,9 @@ function ExamCountdown({ now: externalNow }) {
 }
 
 function SafeZoneCalculator({ tasks, threshold = 75 }) {
-  const present = tasks.filter(t => t.present !== false).length;
-  const total = tasks.length;
+  const regularTasks = tasks.filter(t => !t.isFree);
+  const present = regularTasks.filter(t => t.present !== false).length;
+  const total = regularTasks.length;
   const percentage = total > 0 ? (present / total) * 100 : 100;
   const tRatio = threshold / 100;
   const needRatio = 1 - tRatio;
