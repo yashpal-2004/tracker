@@ -1006,10 +1006,10 @@ const SmartHabitTracker = () => {
               return 'category';
             })}
             title={`Current Sort: ${sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}`}
-            style={{ minWidth: 'auto', gap: '6px', padding: '0 12px' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '12px' }}
           >
             <MoreVertical size={16} />
-            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>
               {sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}
             </span>
           </button>
@@ -1017,10 +1017,17 @@ const SmartHabitTracker = () => {
             className={`action-btn ${showExtraHistory ? 'active' : ''}`}
             onClick={() => setShowExtraHistory(!showExtraHistory)}
             title={showExtraHistory ? "Hide Extra Grind History" : "Show Extra Grind History"}
-            style={{ minWidth: 'auto', gap: '6px', padding: '0 12px', border: showExtraHistory ? '2px solid #6366f1' : '2px solid transparent' }}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              padding: '10px 16px', 
+              borderRadius: '12px',
+              border: showExtraHistory ? '2px solid #6366f1' : '2px solid transparent' 
+            }}
           >
             <History size={18} color={showExtraHistory ? '#6366f1' : 'currentColor'} />
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: showExtraHistory ? '#6366f1' : 'currentColor' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: showExtraHistory ? '#6366f1' : 'currentColor' }}>
               Grind
             </span>
           </button>
@@ -1028,10 +1035,17 @@ const SmartHabitTracker = () => {
             className={`action-btn ${showArchived ? 'active' : ''}`}
             onClick={() => setShowArchived(!showArchived)}
             title={showArchived ? "Hide Archived Habits" : "Show Archived Habits"}
-            style={{ minWidth: 'auto', gap: '6px', padding: '0 12px', border: showArchived ? '2px solid var(--primary)' : '2px solid transparent' }}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              padding: '10px 16px', 
+              borderRadius: '12px',
+              border: showArchived ? '2px solid var(--primary)' : '2px solid transparent' 
+            }}
           >
             <Archive size={18} color={showArchived ? 'var(--primary)' : 'currentColor'} />
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: showArchived ? 'var(--primary)' : 'currentColor' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: showArchived ? 'var(--primary)' : 'currentColor' }}>
               Archive
             </span>
           </button>
@@ -1199,7 +1213,13 @@ const SmartHabitTracker = () => {
               });
             } else {
               return (
-                <div className="habit-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '24px', gridColumn: '1 / -1' }}>
+                <div className="habit-grid" style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', 
+                  gap: '32px', 
+                  gridColumn: '1 / -1',
+                  width: '100%' 
+                }}>
                   {[...filteredHabits]
                     .sort((a, b) => {
                       if (sortBy === 'priority') {

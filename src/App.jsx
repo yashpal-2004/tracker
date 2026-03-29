@@ -46,6 +46,7 @@ import {
   ExternalLink,
   Loader2,
   CheckCircle2,
+  CheckCircle,
   AlertCircle,
   Cloud,
   CloudOff,
@@ -115,19 +116,18 @@ const CONTEST_SCHEDULE = [
 ];
 
 const SUBJECT_THEMES = {
-  "DM Class": { primary: "#6366f1", glow: "rgba(99, 102, 241, 0.15)" },
-  "DM Lab": { primary: "#4f46e5", glow: "rgba(79, 70, 229, 0.15)" },
-  "DVA Class": { primary: "#f59e0b", glow: "rgba(245, 158, 11, 0.15)" },
-  "DVA Lab": { primary: "#d97706", glow: "rgba(217, 119, 6, 0.15)" },
-  "GenAI Class": { primary: "#8b5cf6", glow: "rgba(139, 92, 246, 0.15)" },
-  "GenAI Lab": { primary: "#7c3aed", glow: "rgba(124, 58, 237, 0.15)" },
-  "SD Class": { primary: "#10b981", glow: "rgba(16, 185, 129, 0.15)" },
-  "SD Lab": { primary: "#059669", glow: "rgba(5, 150, 105, 0.15)" },
-  "Analytics": { primary: "#1e293b", glow: "rgba(30, 41, 59, 0.15)" },
-  "All Lectures": { primary: "#0f172a", glow: "rgba(15, 23, 42, 0.15)" },
-  "Exam Schedule": { primary: "#f59e0b", glow: "rgba(245, 158, 11, 0.15)" }
+  "DM Class": { primary: "#00aaff", glow: "rgba(0, 170, 255, 0.18)" },
+  "DM Lab":   { primary: "#0088cc", glow: "rgba(0, 136, 204, 0.18)" },
+  "DVA Class": { primary: "#ff0084", glow: "rgba(255, 0, 132, 0.18)" },
+  "DVA Lab":   { primary: "#cc006a", glow: "rgba(204, 0, 106, 0.18)" },
+  "GenAI Class": { primary: "#4c00ff", glow: "rgba(76, 0, 255, 0.18)" },
+  "GenAI Lab":   { primary: "#3d00cc", glow: "rgba(61, 0, 204, 0.18)" },
+  "SD Class": { primary: "#00ae74", glow: "rgba(0, 174, 116, 0.18)" },
+  "SD Lab":   { primary: "#008b5d", glow: "rgba(0, 139, 93, 0.18)" },
+  "Analytics": { primary: "#1e293b", glow: "rgba(30, 41, 59, 0.18)" },
+  "All Lectures": { primary: "#0f172a", glow: "rgba(15, 23, 42, 0.18)" },
+  "Exam Schedule": { primary: "#ef4444", glow: "rgba(239, 68, 68, 0.18)" }
 };
-
 function App() {
   const [tasks, setTasks] = useState([]);
   const [activeSubject, setActiveSubject] = useState(() => {
@@ -1059,8 +1059,6 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                       const val = e.target.value;
                       const newVal = val === '' ? 0 : parseInt(val);
                       setLocalAttendance(newVal);
-
-                      // Calculate offset relative to current user attendance
                       onUpdateFriendMeta({
                         attendanceOffset: newVal - presentCount,
                         attendanceCount: null
@@ -1115,30 +1113,32 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
               {filterMode} {title} ({filteredTasks.length})
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {['All', 'Pending', 'Done', 'Important', 'Free', 'Regular'].map(mode => (
-              <button
-                key={mode}
-                onClick={() => setFilterMode(mode)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '100px',
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  background: filterMode === mode ? 'var(--primary)' : '#f1f5f9',
-                  color: filterMode === mode ? 'white' : '#64748b',
-                  border: '1px solid',
-                  borderColor: filterMode === mode ? 'var(--primary)' : '#e2e8f0',
-                  boxShadow: filterMode === mode ? '0 4px 10px var(--primary-glow)' : 'none',
-                  transition: 'all 0.2s ease',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em'
-                }}
-              >
-                {mode}
-              </button>
-            ))}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {['All', 'Pending', 'Done', 'Important', 'Free', 'Regular'].map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => setFilterMode(mode)}
+                  className={`filter-btn ${filterMode === mode ? 'active' : ''}`}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '100px',
+                    fontSize: '0.7rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    background: filterMode === mode ? 'var(--primary)' : '#f1f5f9',
+                    color: filterMode === mode ? 'white' : '#64748b',
+                    border: '1px solid',
+                    borderColor: filterMode === mode ? 'var(--primary)' : '#e2e8f0',
+                    transition: 'all 0.2s ease',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em'
+                  }}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -1275,73 +1275,84 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                 <div className="timeline-dot">
                   <span className="dot-number">#{task.number}</span>
                 </div>
-                {index < tasks.length - 1 && <div className="timeline-line" />}
+                {index < filteredTasks.length - 1 && <div className="timeline-line" />}
               </div>
               <div className="timeline-content">
-                <div className="timeline-header">
-                  <div className="timeline-title">
-                    {task.notes ? (
-                      <a href={task.notes} target="_blank" rel="noreferrer" className="lecture-link">
-                        <BookOpen size={16} />
-                        {task.name}
-                        <ExternalLink size={14} />
-                      </a>
-                    ) : (
-                      <span className="lecture-name">
-                        <BookOpen size={16} />
-                        {task.name}
-                      </span>
-                    )}
+                <div className="timeline-card-main">
+                  <div className="timeline-card-top">
+                    <div className="timeline-card-title-group">
+                      <div className="timeline-card-title">
+                        <BookOpen size={18} className="title-icon" />
+                        {task.notes ? (
+                          <a href={task.notes} target="_blank" rel="noreferrer" className="lecture-link">
+                            {task.name}
+                            <ExternalLink size={14} className="ext-link-icon" />
+                          </a>
+                        ) : (
+                          <span className="lecture-name">{task.name}</span>
+                        )}
+                      </div>
+                      <div className="timeline-card-date">
+                        <Calendar size={14} /> {formatDate(task.date)}
+                        {task.notionUrl && (
+                          <a href={task.notionUrl} target="_blank" rel="noreferrer" className="notion-chip">
+                            <NotionLogo size={14} /> <span>Notes</span>
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    <div className="timeline-card-status">
+                      {task.present !== false ? (
+                        <div className="status-pill present" title="Present">P</div>
+                      ) : (
+                        <div className="status-pill absent" title="Absent">A</div>
+                      )}
+                    </div>
                   </div>
-                  <div className="timeline-badges">
-                    {task.autoCreated && <span className="badge badge-auto">✨ Auto</span>}
-                    {task.isFree && <span className="badge badge-free">☕ Free</span>}
-                    {task.important && <span className="badge badge-important">⭐ Important</span>}
-                    {task.present !== false ? (
-                      <span className="badge badge-present">✓ Present</span>
-                    ) : (
-                      <span className="badge badge-absent">✗ Absent</span>
-                    )}
-                  </div>
-                </div>
-                <div className="timeline-meta">
-                  <span className="meta-date"><Calendar size={14} /> {formatDate(task.date)}</span>
-                  {task.notionUrl && (
-                    <a href={task.notionUrl} target="_blank" rel="noreferrer" className="meta-notion">
-                      <NotionLogo size={14} /> Notion Notes
-                    </a>
-                  )}
-                </div>
-                <div className="timeline-actions">
-                  <label className="action-toggle">
-                    <input
-                      type="checkbox"
-                      checked={task.present ?? true}
-                      onChange={e => onUpdate(task.id, { present: e.target.checked })}
-                    />
-                    <span>Attendance</span>
-                  </label>
-                  <label className="action-toggle">
-                    <input
-                      type="checkbox"
-                      checked={task.completed}
-                      onChange={e => onUpdate(task.id, { completed: e.target.checked })}
-                    />
-                    <span>Completed</span>
-                  </label>
-                  <div className="action-buttons">
-                    <button className={`icon-btn ${task.isFree ? 'active free' : ''}`} onClick={() => onUpdate(task.id, { isFree: !task.isFree })} title="Free Lecture">
-                      <Coffee size={16} fill={task.isFree ? "currentColor" : "none"} />
-                    </button>
-                    <button className={`icon-btn ${task.important ? 'active' : ''}`} onClick={() => onUpdate(task.id, { important: !task.important })} title="Important">
-                      <Star size={16} fill={task.important ? "currentColor" : "none"} />
-                    </button>
-                    <button className="icon-btn" onClick={() => onEdit(task)} title="Edit">
-                      <Edit2 size={16} />
-                    </button>
-                    <button className="icon-btn delete" onClick={() => onDelete(task.id)} title="Delete">
-                      <Trash2 size={16} />
-                    </button>
+
+                  <div className="timeline-card-bottom">
+                    <div className="timeline-card-toggles">
+                      <label className="toggle-chip">
+                        <input
+                          type="checkbox"
+                          checked={task.present ?? true}
+                          onChange={e => onUpdate(task.id, { present: e.target.checked })}
+                        />
+                        <div className="chip-content">
+                          <CheckCircle2 size={16} className="chip-icon" />
+                          <span>Attendance</span>
+                        </div>
+                      </label>
+                      <label className="toggle-chip">
+                        <input
+                          type="checkbox"
+                          checked={task.completed}
+                          onChange={e => onUpdate(task.id, { completed: e.target.checked })}
+                        />
+                        <div className="chip-content">
+                          <CheckCircle size={16} className="chip-icon" />
+                          <span>Completed</span>
+                        </div>
+                      </label>
+                      {task.isFree && <span className="meta-badge free">☕ Free Lecture</span>}
+                      {task.important && <span className="meta-badge important">⭐ Important</span>}
+                      {task.autoCreated && <span className="meta-badge auto">✨ Auto</span>}
+                    </div>
+
+                    <div className="timeline-card-actions">
+                      <button className={`action-btn ${task.isFree ? 'active' : ''}`} onClick={() => onUpdate(task.id, { isFree: !task.isFree })} title="Free Lecture">
+                        <Coffee size={16} />
+                      </button>
+                      <button className={`action-btn ${task.important ? 'active' : ''}`} onClick={() => onUpdate(task.id, { important: !task.important })} title="Important">
+                        <Star size={16} />
+                      </button>
+                      <button className="action-btn" onClick={() => onEdit(task)} title="Edit">
+                        <Edit2 size={16} />
+                      </button>
+                      <button className="action-btn delete" onClick={() => onDelete(task.id)} title="Delete">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

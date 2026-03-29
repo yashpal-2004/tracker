@@ -1,11 +1,12 @@
 .habit-tracker-container {
-  padding: 24px;
+  padding: 32px;
   animation: fadeIn 0.5s ease-out;
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  max-width: 1200px;
+  gap: 32px;
+  max-width: 1600px;
   margin: 0 auto;
+  width: 100%;
 }
 
 @keyframes fadeIn {
@@ -87,8 +88,8 @@
 
 .habit-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 32px;
 }
 
 .habit-card {
