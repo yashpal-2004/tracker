@@ -18,6 +18,13 @@ const getCurrentTimeInMinutes = (date = new Date()) => {
     return date.getHours() * 60 + date.getMinutes();
 };
 
+/**
+ * Generate a consistent unique ID for a lecture instance
+ */
+export const generateLectureId = (subject, itemName, date) => {
+    return `lecture_${subject}_${itemName}_${date}`.replace(/\s+/g, '_').toLowerCase();
+};
+
 // Get day name from index
 const getDayName = (index) => {
     const days = ['Mon', 'Tue', 'Wed', 'Thurs', 'Fri'];
@@ -90,13 +97,16 @@ export const getPendingLectures = (currentTime = new Date(), existingTasks = [])
                 task.date === todayStr
             );
 
+            // Unique ID for this specific lecture instance
+            const lectureId = generateLectureId(subject, item.name, todayStr);
+
             // Check if this lecture was manually deleted by the user
-            const deletedKey = `${subject}_${item.name}_${todayStr}`;
             const deletedLectures = JSON.parse(localStorage.getItem('deleted_lectures') || '{}');
-            const wasManuallyDeleted = deletedLectures[deletedKey] !== undefined;
+            const wasManuallyDeleted = deletedLectures[lectureId] !== undefined;
 
             if (!alreadyExists && !wasManuallyDeleted) {
                 pendingLectures.push({
+                    id: lectureId,
                     name: item.name,
                     subject: subject,
                     time: item.time,

@@ -22,9 +22,10 @@ import SmartHabitTracker from './SmartHabitTracker';
 import SleepTracker from './SleepTracker';
 import TimeTracker from './TimeTracker';
 import { db, TASKS_COLLECTION } from './firebase';
-import { getPendingLectures, getCurrentLecture, getNextLecture } from './autoLectureCreator';
+import { getPendingLectures, getCurrentLecture, getNextLecture, generateLectureId } from './autoLectureCreator';
 import {
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   doc,
@@ -74,7 +75,10 @@ import {
   Home,
   Moon,
   Timer,
-  Coffee
+  Coffee,
+  User,
+  Users,
+  Target
 } from 'lucide-react';
 
 const NotionLogo = ({ size = 16, className = "" }) => (
@@ -139,6 +143,7 @@ function App() {
   const [activeTopic, setActiveTopic] = useState('Lectures');
 
   const [editingTask, setEditingTask] = useState(null);
+  const [portalElement, setPortalElement] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState('Connecting...');
   const [attendanceThreshold, setAttendanceThreshold] = useState(() => {
@@ -226,7 +231,9 @@ function App() {
           };
 
           try {
-            await addDoc(TASKS_COLLECTION, newLecture);
+            // Use setDoc with a unique ID to prevent duplicates
+            // This is atomic and will either create a new doc or overwrite existing one with same ID
+            await setDoc(doc(db, 'tasks', lecture.id), newLecture);
           } catch (error) {
             console.error('Error auto-creating lecture:', error);
           }
@@ -366,7 +373,7 @@ function App() {
         // If this is an auto-created lecture, mark it as manually deleted
         // so it won't be auto-recreated
         if (task && task.type === 'lecture' && task.autoCreated) {
-          const deletedKey = `${task.subjectName}_${task.name}_${task.date}`;
+          const deletedKey = generateLectureId(task.subjectName, task.name, task.date);
           const deletedLectures = JSON.parse(localStorage.getItem('deleted_lectures') || '{}');
           deletedLectures[deletedKey] = {
             name: task.name,
@@ -387,35 +394,38 @@ function App() {
   };
 
   const friendMetaDoc = useMemo(() => {
-    // Find metadata, prioritizing docs that have an attendanceOffset set
-    const candidates = tasks.filter(t => t.type === 'friend_meta' && (t.subjectName === activeSubject || t.subject === activeSubject));
+    // Derive base subject name for cross-lookups
+    const baseSubject = activeSubject.replace(' Class', '').replace(' Lab', '');
+    const metaSubject = baseSubject === 'Home' || baseSubject === 'Analytics' ? activeSubject : baseSubject;
+
+    // Find metadata for either exact subject or base subject
+    const candidates = tasks.filter(t => t.type === 'friend_meta' && 
+      (t.subjectName === activeSubject || t.subject === activeSubject || t.subjectName === metaSubject || t.subject === metaSubject));
+    
     if (candidates.length === 0) return null;
 
-    // Sort to put docs with offset first, then by most recent
+    // Sort to put docs with data/offsets first, then by most recent
     return candidates.sort((a, b) => {
-      if (a.attendanceOffset !== undefined && b.attendanceOffset === undefined) return -1;
-      if (a.attendanceOffset === undefined && b.attendanceOffset !== undefined) return 1;
+      // Prioritize docs with more data fields
+      const scoreA = (a.attendanceOffset !== undefined ? 1 : 0) + (a.myProjectMarks !== undefined ? 1 : 0) + (a.maxProjectMarks !== undefined ? 1 : 0);
+      const scoreB = (b.attendanceOffset !== undefined ? 1 : 0) + (b.myProjectMarks !== undefined ? 1 : 0) + (b.maxProjectMarks !== undefined ? 1 : 0);
+      if (scoreA !== scoreB) return scoreB - scoreA;
       return (b.createdAt || 0) - (a.createdAt || 0);
     })[0];
   }, [tasks, activeSubject]);
 
   const updateFriendMeta = async (updates) => {
-    // Find ALL metadata docs for this subject to clean up duplicates if they exist
-    const duplicates = tasks.filter(t => t.type === 'friend_meta' && (t.subjectName === activeSubject || t.subject === activeSubject));
+    // Use base subject name for metadata to share across Class and Lab
+    const baseSubject = activeSubject.replace(' Class', '').replace(' Lab', '');
+    const metaSubject = baseSubject === 'Home' || baseSubject === 'Analytics' ? activeSubject : baseSubject;
+
+    const duplicates = tasks.filter(t => t.type === 'friend_meta' && 
+      (t.subjectName === metaSubject || t.subject === metaSubject || t.subjectName === activeSubject || t.subject === activeSubject));
 
     if (duplicates.length > 0) {
-      // Update the first one
       await updateTask(duplicates[0].id, updates);
-
-      // Clean up others if any (defensive)
-      if (duplicates.length > 1) {
-        for (let i = 1; i < duplicates.length; i++) {
-          await deleteDoc(doc(db, 'tasks', duplicates[i].id));
-        }
-      }
     } else {
-      // Create new one with explicit fields
-      await addTask(activeSubject, 'friend_meta', {
+      await addTask(metaSubject, 'friend_meta', {
         ...updates,
         createdAt: Date.now()
       });
@@ -423,15 +433,122 @@ function App() {
   };
 
   const leadMsg = useMemo(() => {
-    const activeTasks = tasks.filter(t => t.type !== 'friend_meta');
-    const gradedTasks = activeTasks.filter(t => t.marks !== undefined || t.dhruvMarks !== undefined);
-    const myTotalMarks = gradedTasks.reduce((acc, t) => acc + (Number(t.marks) || 0), 0);
-    const dhruvTotalMarks = gradedTasks.reduce((acc, t) => acc + (Number(t.dhruvMarks) || 0), 0);
-    const diff = myTotalMarks - dhruvTotalMarks;
+    // Derive unique base subject names from DEFAULT_SUBJECTS
+    const baseSubjects = [...new Set(DEFAULT_SUBJECTS.map(s => s.replace(' Class', '').replace(' Lab', '')))];
+    let myTotal = 0;
+    let dhruvTotal = 0;
 
-    if (diff > 0) return { text: `You are ahead by ${diff.toFixed(2)}`, type: 'win' };
-    if (diff < 0) return { text: `Dhruv is ahead by ${Math.abs(diff).toFixed(2)}`, type: 'lose' };
-    return { text: `Scores are tied`, type: 'neutral' };
+    baseSubjects.forEach(baseName => {
+      const { weights } = getSubjectWeights(baseName);
+      const classSubjectName = `${baseName} Class`;
+      const labSubjectName = `${baseName} Lab`;
+
+      const getSubStats = (subjectName) => {
+        const subTasks = tasks.filter(t => t.subjectName === subjectName);
+        const lects = subTasks.filter(t => t.type === 'lecture');
+        const attCount = lects.filter(t => t.present !== false).length;
+        const attPercent = lects.length > 0 ? attCount / lects.length : 0;
+
+        // Dhruv attendance via friend_meta
+        const friendMeta = tasks
+          .filter(t => t.type === 'friend_meta' && (t.subjectName === subjectName || t.subject === subjectName))
+          .sort((a, b) => {
+            const aHas = a.attendanceOffset !== undefined;
+            const bHas = b.attendanceOffset !== undefined;
+            if (aHas && !bHas) return -1;
+            if (!aHas && bHas) return 1;
+            return (b.createdAt || 0) - (a.createdAt || 0);
+          })[0];
+        const dhruvAttCount = friendMeta?.attendanceOffset !== undefined
+          ? attCount + (friendMeta.attendanceOffset || 0)
+          : (friendMeta?.attendanceCount ?? attCount);
+        const dhruvAttPercent = lects.length > 0 ? dhruvAttCount / lects.length : 0;
+
+        const getTypeMarks = (type) => {
+          const filtered = subTasks.filter(t => t.type === type);
+          return {
+            myMarks: filtered.reduce((acc, t) => acc + (Number(t.marks) || 0), 0),
+            dhruvMarks: filtered.reduce((acc, t) => acc + (Number(t.dhruvMarks) || 0), 0),
+            total: filtered.length,
+            done: filtered.filter(t => t.completed).length,
+            dhruvDone: filtered.filter(t => t.dhruvCompleted).length,
+            maxMarks: filtered.reduce((acc, t) => acc + (Number(t.maxMarks) || 0), 0)
+          };
+        };
+
+        return { attPercent, dhruvAttPercent, getTypeMarks };
+      };
+
+      const cls = getSubStats(classSubjectName);
+      const lab = getSubStats(labSubjectName);
+
+      // Attendance
+      myTotal    += (cls.attPercent * 0.5 + lab.attPercent * 0.5) * (weights.attendance || 0) * 100;
+      dhruvTotal += (cls.dhruvAttPercent * 0.5 + lab.dhruvAttPercent * 0.5) * (weights.attendance || 0) * 100;
+
+      // Assignments — fixed 70% for You, 50% for Dhruv
+      myTotal    += 0.70 * (weights.assignment || 0) * 100;
+      dhruvTotal += 0.50 * (weights.assignment || 0) * 100;
+
+      // Contest / MidSem / EndSem — use raw marks from tasks
+      ['contest', 'midSem', 'endSem'].forEach(type => {
+        const c = cls.getTypeMarks(type);
+        const l = lab.getTypeMarks(type);
+        myTotal    += (c.myMarks + l.myMarks);
+        dhruvTotal += (c.dhruvMarks + l.dhruvMarks);
+      });
+
+      // Project — based on completion/marks or manual direct marks in friend_meta using the baseName
+      const meta = tasks.find(t => t.type === 'friend_meta' && (t.subjectName === baseName || t.subject === baseName));
+      
+      if (meta && meta.maxProjectMarks > 0) {
+        const myM = meta.myProjectMarks || 0;
+        const dhruvM = meta.dhruvProjectMarks ?? myM; // Fallback to My Marks if Dhruv's are not explicitly set
+        const maxM = meta.maxProjectMarks;
+        
+        myTotal    += (myM / maxM) * (weights.project || 0) * 100;
+        dhruvTotal += (dhruvM / maxM) * (weights.project || 0) * 100;
+      } else {
+        const getProjPartialScore = (stats, forDhruv = false) => {
+          if (stats.maxMarks > 0) return (forDhruv ? stats.dhruvMarks : stats.myMarks) / stats.maxMarks;
+          if (stats.total > 0) return (forDhruv ? (stats.dhruvDone ?? stats.done) : stats.done) / stats.total;
+          return 0;
+        };
+        const cProj = cls.getTypeMarks('project');
+        const lProj = lab.getTypeMarks('project');
+        
+        const myProjScore = getProjPartialScore(cProj, false) * 0.5 + getProjPartialScore(lProj, false) * 0.5;
+        const dhruvProjScore = getProjPartialScore(cProj, true) * 0.5 + getProjPartialScore(lProj, true) * 0.5;
+        
+        myTotal    += myProjScore * (weights.project || 0) * 100;
+        dhruvTotal += dhruvProjScore * (weights.project || 0) * 100;
+      }
+    });
+
+    // Also compute without-assignment diff (subtract fixed assignment contributions)
+    const assignmentBaseSubjects = [...new Set(DEFAULT_SUBJECTS.map(s => s.replace(' Class', '').replace(' Lab', '')))];
+    let myAssignTotal = 0;
+    let dhruvAssignTotal = 0;
+    assignmentBaseSubjects.forEach(baseName => {
+      const { weights } = getSubjectWeights(baseName);
+      myAssignTotal    += 0.70 * (weights.assignment || 0) * 100;
+      dhruvAssignTotal += 0.50 * (weights.assignment || 0) * 100;
+    });
+
+    const diffWith    = myTotal - dhruvTotal;
+    const diffWithout = (myTotal - myAssignTotal) - (dhruvTotal - dhruvAssignTotal);
+
+    const fmt = (d) => d > 0 ? `+${d.toFixed(1)}` : d < 0 ? `${d.toFixed(1)}` : '0';
+    const typeOf = (d) => d > 0 ? 'win' : d < 0 ? 'lose' : 'neutral';
+
+    return {
+      diffWith,
+      diffWithout,
+      type: typeOf(diffWith),
+      typeWithout: typeOf(diffWithout),
+      textWith: fmt(diffWith),
+      textWithout: fmt(diffWithout)
+    };
   }, [tasks]);
 
   const currentTasks = useMemo(() => {
@@ -478,7 +595,7 @@ function App() {
               </div>
             )}
             {!['Home', 'Marks Overview', 'Detailed Analysis', 'Pending Work', 'All Lectures', 'Activity Tracker', 'Exam Schedule', 'Timetable', 'Habits', 'Sleep', 'Focus', 'Safe Zone'].includes(activeSubject) && (
-              <div id="section-stats-portal"></div>
+              <div id="section-stats-portal" ref={node => { if (node && portalElement !== node) setPortalElement(node); }}></div>
             )}
           </div>
         </header>
@@ -497,6 +614,7 @@ function App() {
             onUpdate={updateTask}
             onDelete={deleteTask}
             onEdit={setEditingTask}
+            portalNode={portalElement}
           />
         ) : activeSubject === 'Activity Tracker' ? (
           <ActivityView tasks={tasks} subjects={DEFAULT_SUBJECTS} />
@@ -528,6 +646,7 @@ function App() {
                   onDelete={deleteTask}
                   onEdit={setEditingTask}
                   threshold={attendanceThreshold}
+                  portalNode={portalElement}
                 />
               )}
 
@@ -541,6 +660,7 @@ function App() {
                   onUpdate={updateTask}
                   onDelete={deleteTask}
                   onEdit={setEditingTask}
+                  portalNode={portalElement}
                 />
               )}
 
@@ -555,6 +675,7 @@ function App() {
                     onUpdate={updateTask}
                     onDelete={deleteTask}
                     onEdit={setEditingTask}
+                    portalNode={portalElement}
                   />
                 </div>
               )}
@@ -569,6 +690,7 @@ function App() {
                   onUpdate={updateTask}
                   onDelete={deleteTask}
                   onEdit={setEditingTask}
+                  portalNode={portalElement}
                 />
               )}
 
@@ -849,18 +971,31 @@ function BookmarkBar({ activeSubject, onSelect, leadData, time }) {
           </div>
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', paddingLeft: '16px' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', paddingLeft: '16px' }}>
           <ExamCountdown />
-          <div style={{
-            paddingRight: '4px',
-            fontSize: '0.7rem',
-            fontWeight: 800,
-            color: leadData.type === 'win' ? '#10b981' : leadData.type === 'lose' ? '#f59e0b' : '#64748b',
-            textTransform: 'uppercase',
-            letterSpacing: '0.02em',
-            whiteSpace: 'nowrap'
-          }}>
-            {leadData.text}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.58rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>w/o asgn:</span>
+            <span style={{
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              color: leadData.typeWithout === 'win' ? '#10b981' : leadData.typeWithout === 'lose' ? '#f59e0b' : '#64748b',
+              textTransform: 'uppercase',
+              letterSpacing: '0.02em',
+              whiteSpace: 'nowrap'
+            }}>
+              {leadData.textWithout}
+            </span>
+            <span style={{ fontSize: '0.58rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>w/ asgn:</span>
+            <span style={{
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              color: leadData.type === 'win' ? '#10b981' : leadData.type === 'lose' ? '#f59e0b' : '#64748b',
+              textTransform: 'uppercase',
+              letterSpacing: '0.02em',
+              whiteSpace: 'nowrap'
+            }}>
+              {leadData.textWith}
+            </span>
           </div>
         </div>
       </div>
@@ -906,12 +1041,15 @@ function BookmarkBar({ activeSubject, onSelect, leadData, time }) {
 }
 
 
-function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, activeSubject, friendMeta, onUpdateFriendMeta, threshold }) {
+function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, activeSubject, friendMeta, onUpdateFriendMeta, threshold, portalNode }) {
   const [val, setVal] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [link, setLink] = useState('');
   const [notionLink, setNotionLink] = useState('');
   const [impQs, setImpQs] = useState('');
+  const [marks, setMarks] = useState('');
+  const [dhruvMarks, setDhruvMarks] = useState('');
+  const [maxMarks, setMaxMarks] = useState('');
   const [isLoaded, setIsLoaded] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
@@ -937,6 +1075,9 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
       setLink(d.link || '');
       setNotionLink(d.notionLink || '');
       setImpQs(d.impQs || '');
+      setMarks(d.marks || '');
+      setDhruvMarks(d.dhruvMarks || '');
+      setMaxMarks(d.maxMarks || '');
       if (d.date) setDate(d.date);
     }
     setIsLoaded(true);
@@ -948,9 +1089,9 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
 
     const drafts = JSON.parse(localStorage.getItem('inputDrafts') || '{}');
     const key = `${activeSubject}_${type}`;
-    drafts[key] = { val, link, notionLink, impQs, date };
+    drafts[key] = { val, link, notionLink, impQs, date, marks, dhruvMarks, maxMarks };
     localStorage.setItem('inputDrafts', JSON.stringify(drafts));
-  }, [val, link, notionLink, impQs, date, activeSubject, type, isLoaded]);
+  }, [val, link, notionLink, impQs, date, marks, dhruvMarks, maxMarks, activeSubject, type, isLoaded]);
 
   // Update suggestions when val changes (for lectures only)
   useEffect(() => {
@@ -983,7 +1124,13 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
       data.notes = link;
       data.notionUrl = notionLink;
     }
-    if (type === 'assignment' || type === 'quiz') data.link = link;
+    if (type === 'assignment' || type === 'quiz' || type === 'project') {
+      data.link = link;
+      data.marks = Number(marks) || 0;
+      data.dhruvMarks = Number(dhruvMarks) || 0;
+      data.maxMarks = Number(maxMarks) || 0;
+      if (data.marks > 0 || data.dhruvMarks > 0) data.completed = true;
+    }
     if (type === 'quiz') data.impQs = impQs;
 
     onAdd(data);
@@ -991,15 +1138,14 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     setLink('');
     setNotionLink('');
     setImpQs('');
+    setMarks('');
+    setDhruvMarks('');
+    setMaxMarks('');
     setShowSuggestions(false);
     setSuggestions([]);
   };
 
-  const [portalNode, setPortalNode] = useState(null);
-
-  useEffect(() => {
-    setPortalNode(document.getElementById('section-stats-portal'));
-  }, []);
+  const mountNode = portalNode || document.getElementById('section-stats-portal');
 
   // Calculate the live remote value for Dhruv based on offset logic
   const remoteDhruvCount = useMemo(() => {
@@ -1023,7 +1169,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     setLocalAttendance(remoteDhruvCount);
   }, [remoteDhruvCount]);
 
-  const statsBar = portalNode && createPortal(
+  const statsBarContent = (
     <div className="unified-stats-bar-container" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
       <button
         className={`header-add-btn ${showForm ? 'active' : ''}`}
@@ -1039,7 +1185,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
           <>
             <div className="stat-item">
               <div className="stat-info">
-                <div className="stat-label">Me</div>
+                <div className="stat-label">ME</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(16, 185, 129, 0.05)', padding: '2px 8px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.1)' }}>
                   <span className={`stat-value ${attendPercent >= 75 ? 'stat-success' : 'stat-danger'}`}>{presentCount}</span>
                   <span className="stat-value" style={{ opacity: 0.3, fontSize: '0.8em' }}>/</span>
@@ -1050,7 +1196,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
             </div>
             <div className="stat-item">
               <div className="stat-info">
-                <div className="stat-label">Dhruv</div>
+                <div className="stat-label">DHRUV</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <input
                     type="number"
@@ -1077,9 +1223,74 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
             </div>
           </>
         )}
+        {type === 'project' && (() => {
+          const tMarksArr = tasks.filter(t => t.type === 'project');
+          const sumMy = tMarksArr.reduce((acc, t) => acc + (t.marks || 0), 0);
+          const sumDhruv = tMarksArr.reduce((acc, t) => acc + (t.dhruvMarks || 0), 0);
+          const sumMax = tMarksArr.reduce((acc, t) => acc + (t.maxMarks || 0), 0);
+          
+          return (
+            <>
+              <div className="stat-item">
+                <div className="stat-info">
+                  <div className="stat-label" style={{ color: '#6366f1' }}>ME</div>
+                  <input
+                    type="number"
+                    value={friendMeta?.myProjectMarks || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      onUpdateFriendMeta({
+                        myProjectMarks: val === '' ? null : Number(val)
+                      });
+                    }}
+                    placeholder={sumMy > 0 ? sumMy : "—"}
+                    className="header-stat-input"
+                    style={{ width: '40px', height: '22px', fontSize: '0.85rem', borderColor: '#c7d2fe', background: '#f5f7ff' }}
+                  />
+                </div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-info">
+                  <div className="stat-label" style={{ color: '#f59e0b' }}>DHRUV</div>
+                  <input
+                    type="number"
+                    value={friendMeta?.dhruvProjectMarks || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      onUpdateFriendMeta({
+                        dhruvProjectMarks: val === '' ? null : Number(val)
+                      });
+                    }}
+                    placeholder={sumDhruv > 0 ? sumDhruv : "—"}
+                    className="header-stat-input"
+                    style={{ width: '40px', height: '22px', fontSize: '0.85rem', borderColor: '#fcd34d', background: '#fffbeb' }}
+                  />
+                </div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-info">
+                  <div className="stat-label" style={{ color: '#8b5cf6' }}>MAX</div>
+                  <input
+                    type="number"
+                    value={friendMeta?.maxProjectMarks || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      onUpdateFriendMeta({
+                        maxProjectMarks: val === '' ? null : Number(val)
+                      });
+                    }}
+                    placeholder={sumMax > 0 ? sumMax : "—"}
+                    className="header-stat-input"
+                    style={{ width: '40px', height: '22px', fontSize: '0.85rem', borderColor: '#ddd6fe', background: '#f5f3ff' }}
+                  />
+                </div>
+              </div>
+            </>
+          );
+        })()}
         <div className="stat-item">
           <div className="stat-info">
-            <div className="stat-label">{type === 'lecture' ? 'My Comp' : 'Me'}</div>
+            <div className="stat-label">{type === 'lecture' ? 'ME COMP' : 'ME'}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="stat-value">{completePercent}%</span>
               <span className="stat-subtext" style={{ opacity: 0.6 }}>{completedCount}/{totalCount}</span>
@@ -1089,7 +1300,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
         {(type === 'project' || type === 'assignment') && (
           <div className="stat-item">
             <div className="stat-info">
-              <div className="stat-label">Dhruv</div>
+              <div className="stat-label">DHRUV</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span className="stat-value" style={{ color: '#f59e0b' }}>{dhruvCompletePercent}%</span>
                 <span className="stat-subtext" style={{ opacity: 0.6 }}>{dhruvCompletedCount}/{totalCount}</span>
@@ -1098,14 +1309,16 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
           </div>
         )}
       </div>
-    </div>,
-    portalNode
+    </div>
   );
+
+  const statsBar = (mountNode instanceof Element) ? createPortal(statsBarContent, mountNode) : null;
+  const statsBarInline = <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.4)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.3)' }}>{statsBarContent}</div>;
 
   return (
     <section className={`task-section ${type}-section glass`}>
+      {!mountNode && statsBarInline}
       {statsBar}
-      {/* Keeping a hidden or minimal title for accessibility/structure if needed, but the visual header is now in the portal */}
       <div className="section-header-compact" style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
           <div className="section-title-group">
@@ -1247,6 +1460,41 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                     value={impQs}
                     onChange={e => setImpQs(e.target.value)}
                   />
+                </div>
+              )}
+              
+              {['project', 'assignment', 'quiz'].includes(type) && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                   <div className="input-group">
+                      <label style={{ color: 'var(--primary)', opacity: 0.8 }}>My Marks</label>
+                      <input 
+                        type="number" 
+                        placeholder="0"
+                        value={marks} 
+                        onChange={e => setMarks(e.target.value)} 
+                        style={{ border: '1px solid var(--primary-glow)', background: 'white' }}
+                      />
+                   </div>
+                   <div className="input-group">
+                      <label style={{ color: '#f59e0b', opacity: 0.8 }}>Dhruv Marks</label>
+                      <input 
+                        type="number" 
+                        placeholder="0"
+                        value={dhruvMarks} 
+                        onChange={e => setDhruvMarks(e.target.value)} 
+                        style={{ border: '1px solid rgba(245, 158, 11, 0.2)', background: 'white' }}
+                      />
+                   </div>
+                   <div className="input-group">
+                      <label style={{ color: '#64748b' }}>Out of (Max)</label>
+                      <input 
+                        type="number" 
+                        placeholder="100"
+                        value={maxMarks} 
+                        onChange={e => setMaxMarks(e.target.value)} 
+                        style={{ background: 'white' }}
+                      />
+                   </div>
                 </div>
               )}
 
@@ -1415,13 +1663,22 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
             <div key={task.id} className={`gallery-card ${task.completed ? 'completed' : ''} ${task.important ? 'important' : ''}`}>
               <div className="card-header">
                 <div className="card-number-badge">#{task.number}</div>
-                {task.important && <Star size={18} fill="#f59e0b" className="card-star" />}
+                <div className="card-header-actions">
+                   {task.important && <Star size={16} fill="#f59e0b" className="card-star" />}
+                   <button className="card-btn-minimal" onClick={() => onEdit(task)} title="Edit">
+                     <Edit2 size={13} />
+                   </button>
+                   <button className="card-btn-minimal delete" onClick={() => onDelete(task.id)} title="Delete">
+                     <Trash2 size={13} />
+                   </button>
+                </div>
               </div>
+              
               <div className="card-body">
                 <h4 className="card-title">
                   {task.link ? (
                     <a href={task.link} target="_blank" rel="noreferrer">
-                      {task.name}
+                      {task.name} <ExternalLink size={14} style={{ opacity: 0.5, marginLeft: '4px' }} />
                     </a>
                   ) : task.name}
                 </h4>
@@ -1429,34 +1686,36 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                   <span className="card-date"><Calendar size={14} /> {formatDate(task.date)}</span>
                 </div>
               </div>
-              <div className="card-footer">
-                <div className="card-status">
-                  <div className="status-group">
-                    <span className="status-label">You</span>
-                    <div
-                      className={`status-indicator ${task.completed ? 'active' : ''}`}
-                      onClick={() => onUpdate(task.id, { completed: !task.completed })}
-                    >
-                      {task.completed ? <Check size={14} /> : <span>—</span>}
+              
+              <div className="card-marks-panel">
+                <div className="marks-grid">
+                  <div className="mark-item user">
+                    <div className="mark-header">
+                      <User size={12} />
+                      <span>YOU</span>
+                    </div>
+                    <div className="mark-input">
+                      {task.marks !== undefined ? task.marks : (tasks.length === 1 && friendMeta?.myProjectMarks !== undefined ? (friendMeta.myProjectMarks || "0") : "0")}
                     </div>
                   </div>
-                  <div className="status-group">
-                    <span className="status-label">Dhruv</span>
-                    <div
-                      className={`status-indicator dhruv ${task.dhruvCompleted ? 'active' : ''}`}
-                      onClick={() => onUpdate(task.id, { dhruvCompleted: !task.dhruvCompleted })}
-                    >
-                      {task.dhruvCompleted ? <Check size={14} /> : <span>—</span>}
+                  <div className="mark-item friend">
+                    <div className="mark-header">
+                      <Users size={12} />
+                      <span>DHRUV</span>
+                    </div>
+                    <div className="mark-input">
+                      {task.dhruvMarks !== undefined ? task.dhruvMarks : (tasks.length === 1 && friendMeta?.dhruvProjectMarks !== undefined ? (friendMeta.dhruvProjectMarks || "0") : "0")}
                     </div>
                   </div>
-                </div>
-                <div className="card-actions">
-                  <button className="card-btn" onClick={() => onEdit(task)} title="Edit">
-                    <Edit2 size={16} />
-                  </button>
-                  <button className="card-btn delete" onClick={() => onDelete(task.id)} title="Delete">
-                    <Trash2 size={16} />
-                  </button>
+                  <div className="mark-item max">
+                    <div className="mark-header">
+                      <Target size={12} />
+                      <span>MAX</span>
+                    </div>
+                    <div className="mark-input">
+                      {task.maxMarks !== undefined ? task.maxMarks : (friendMeta?.maxProjectMarks || 100)}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1766,7 +2025,7 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
         </div>
         <div className="stat-item">
           <div className="stat-info">
-            <div className="stat-label">Dhruv</div>
+            <div className="stat-label">DHRUV</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Trophy size={14} style={{ color: '#f59e0b' }} />
               <span className="stat-value" style={{ color: '#f59e0b' }}>{dhruvTotalMarks}/{maxMarks}</span>
@@ -2298,7 +2557,7 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
       <div className="unified-stats-bar">
         <div className="stat-item">
           <div className="stat-info">
-            <div className="stat-label">Me</div>
+            <div className="stat-label">ME</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Trophy size={14} style={{ color: '#10b981' }} />
               <span className="stat-value">{totalMarks}/{maxMarks}</span>
@@ -2308,7 +2567,7 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
         </div>
         <div className="stat-item">
           <div className="stat-info">
-            <div className="stat-label">Dhruv</div>
+            <div className="stat-label">DHRUV</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Trophy size={14} style={{ color: '#f59e0b' }} />
               <span className="stat-value" style={{ color: '#f59e0b' }}>{dhruvTotalMarks}/{maxMarks}</span>
@@ -2576,6 +2835,9 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
   const [link, setLink] = useState(task.link || task.notes || '');
   const [notionLink, setNotionLink] = useState(task.notionUrl || '');
   const [impQs, setImpQs] = useState(task.impQs || '');
+  const [marks, setMarks] = useState(task.marks || '');
+  const [dhruvMarks, setDhruvMarks] = useState(task.dhruvMarks || '');
+  const [maxMarks, setMaxMarks] = useState(task.maxMarks || '');
 
   // Contest/Exam fields
   const [hasQuiz, setHasQuiz] = useState(task.hasQuiz !== undefined ? task.hasQuiz : true);
@@ -2663,7 +2925,11 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
       date,
       [task.type === 'lecture' ? 'notes' : 'link']: link,
       notionUrl: notionLink,
-      impQs
+      impQs,
+      marks: Number(marks) || 0,
+      dhruvMarks: Number(dhruvMarks) || 0,
+      maxMarks: Number(maxMarks) || 0,
+      completed: (Number(marks) > 0 || Number(dhruvMarks) > 0) ? true : name !== task.name ? task.completed : task.completed
     };
 
     if (task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') {
@@ -2750,7 +3016,7 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
           </div>
 
           {/* Links Section */}
-          {(task.type === 'lecture' || task.type === 'assignment' || task.type === 'quiz') && (
+          { (task.type === 'lecture' || task.type === 'assignment' || task.type === 'quiz') && (
             <div className="input-group">
               <label>Resources & Notes</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2780,7 +3046,6 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
               </div>
             </div>
           )}
-
           {task.type === 'quiz' && (
             <div className="input-group">
               <label>Important Questions</label>
@@ -2792,8 +3057,43 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
             </div>
           )}
 
+          {['project', 'assignment', 'quiz'].includes(task.type) && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+               <div className="input-group">
+                  <label style={{ color: 'var(--primary)', opacity: 0.8 }}>My Marks</label>
+                  <input 
+                    type="number" 
+                    placeholder="0"
+                    value={marks} 
+                    onChange={e => setMarks(e.target.value)} 
+                    style={{ border: '1px solid var(--primary-glow)', background: 'white' }}
+                  />
+               </div>
+               <div className="input-group">
+                  <label style={{ color: '#f59e0b', opacity: 0.8 }}>Dhruv Marks</label>
+                  <input 
+                    type="number" 
+                    placeholder="0"
+                    value={dhruvMarks} 
+                    onChange={e => setDhruvMarks(e.target.value)} 
+                    style={{ border: '1px solid rgba(245, 158, 11, 0.2)', background: 'white' }}
+                  />
+               </div>
+               <div className="input-group">
+                  <label style={{ color: '#64748b' }}>Out of (Max)</label>
+                  <input 
+                    type="number" 
+                    placeholder="100"
+                    value={maxMarks} 
+                    onChange={e => setMaxMarks(e.target.value)} 
+                    style={{ background: 'white' }}
+                  />
+               </div>
+            </div>
+          )}
+
           {/* Performance Data for Contests/Exams */}
-          {(task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') && (
+          { (task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <label style={{ fontSize: '0.75rem', fontWeight: 850, color: 'var(--primary)', opacity: 0.8 }}>Performance Breakdown</label>
               
@@ -3102,6 +3402,17 @@ function ActivityHeatmap({ tasks }) {
 
 function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }) {
   const [confirmTask, setConfirmTask] = useState(null);
+  
+  const calculateCGPA = (totalScore, count) => {
+    if (count === 0) return 0;
+    const avg = totalScore / count;
+    // Piecewise estimation based on provided Student 1, 2 and 3 benchmarks
+    // Higher marks (A/A+) contribute more significantly to the CGPA curve
+    return avg > 68.75 
+      ? (0.1260 * (avg - 68.75) + 7.190) 
+      : (0.1029 * (avg - 59.5) + 6.238);
+  };
+
   const getSubjectScore = (data, name, isDhruv = false) => {
     const { weights } = getSubjectWeights(name);
 
@@ -3113,8 +3424,8 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
     const attScore = (currentAtt / 100) * (weights.attendance || 0) * 100;
 
     const getCompScore = (key) => {
-      const classData = data.class[key] || { percent: 0, totalMarks: 0, dhruvTotalMarks: 0 };
-      const labData = data.lab[key] || { percent: 0, totalMarks: 0, dhruvTotalMarks: 0 };
+      const classData = data.class[key] || { totalMarks: 0, dhruvTotalMarks: 0 };
+      const labData = data.lab[key] || { totalMarks: 0, dhruvTotalMarks: 0 };
 
       if (['contest', 'midSem', 'endSem'].includes(key)) {
         return isDhruv
@@ -3122,8 +3433,14 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
           : ((classData.totalMarks || 0) + (labData.totalMarks || 0));
       }
 
+      // Assignments: fixed 70% for You, 50% for Dhruv — not based on tasks entered
+      if (key === 'assignment') {
+        const fixedPercent = isDhruv ? 50 : 70;
+        return (fixedPercent / 100) * (weights[key] || 0) * 100;
+      }
+
+      // Project: based on actual completion
       const avgPercent = ((classData.percent || 0) * 0.5 + (labData.percent || 0) * 0.5);
-      // For now assignments are shared completion, but we could add dhruvPercent if needed
       return (avgPercent / 100) * (weights[key] || 0) * 100;
     };
 
@@ -3138,10 +3455,18 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
 
     const finalScore = Object.values(breakdown).reduce((acc, curr) => acc + curr, 0);
 
+    // Unlocked calculation for projection
+    let unlockedWeight = (weights.attendance || 0) + (weights.assignment || 0);
+    if ((data.class.project?.maxMarks || 0) > 0 || (data.lab.project?.maxMarks || 0) > 0 || (data.class.project?.total || 0) > 0) unlockedWeight += (weights.project || 0);
+    if ((data.class.contest?.maxMarks || 0) > 0 || (data.lab.contest?.maxMarks || 0) > 0) unlockedWeight += (weights.contest || 0);
+    if ((data.class.midSem?.maxMarks || 0) > 0 || (data.lab.midSem?.maxMarks || 0) > 0) unlockedWeight += (weights.midSem || 0);
+    if ((data.class.endSem?.maxMarks || 0) > 0 || (data.lab.endSem?.maxMarks || 0) > 0) unlockedWeight += (weights.endSem || 0);
+
     return {
       finalScore: Number(finalScore.toFixed(2)),
       breakdown,
-      weights
+      weights,
+      unlockedWeight
     };
   };
 
@@ -3161,10 +3486,42 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
         const maxMarks = filtered.reduce((acc, t) => acc + (t.maxMarks || 0), 0);
 
         let percent = 0;
-        if (maxMarks > 0) percent = (totalMarks / maxMarks) * 100;
-        else if (total > 0) percent = (done / total) * 100;
+        let dhruvPercent = 0;
 
-        return { total, done, percent, totalMarks, dhruvTotalMarks, maxMarks };
+        if (type === 'project') {
+          const baseName = s.replace(' Class', '').replace(' Lab', '');
+          const meta = tasks.find(t => t.type === 'friend_meta' && (t.subjectName === baseName || t.subject === baseName || t.subjectName === s || t.subject === s));
+          if (meta && meta.maxProjectMarks > 0) {
+            percent = (meta.myProjectMarks || 0) / meta.maxProjectMarks * 100;
+            dhruvPercent = (meta.dhruvProjectMarks || (meta.myProjectMarks || 0)) / meta.maxProjectMarks * 100;
+            return { 
+              total: filtered.length, 
+              done: filtered.filter(t => t.completed).length, 
+              percent, 
+              dhruvPercent, 
+              totalMarks: meta.myProjectMarks || 0, 
+              dhruvTotalMarks: meta.dhruvProjectMarks || 0, 
+              maxMarks: meta.maxProjectMarks 
+            };
+          }
+        }
+
+        if (type === 'assignment') {
+          // Default: You = 70%, Dhruv = 50% of total marks when no marks are set
+          if (maxMarks > 0) {
+            percent = totalMarks > 0 ? (totalMarks / maxMarks) * 100 : 70;
+            dhruvPercent = dhruvTotalMarks > 0 ? (dhruvTotalMarks / maxMarks) * 100 : 50;
+          } else if (total > 0) {
+            percent = done > 0 ? (done / total) * 100 : 70;
+            dhruvPercent = 50;
+          }
+        } else {
+          if (maxMarks > 0) percent = (totalMarks / maxMarks) * 100;
+          else if (total > 0) percent = (done / total) * 100;
+          dhruvPercent = maxMarks > 0 ? (dhruvTotalMarks / maxMarks) * 100 : percent;
+        }
+
+        return { total, done, dhruvDone: filtered.filter(t => t.dhruvCompleted).length, percent, dhruvPercent, totalMarks, dhruvTotalMarks, maxMarks };
       };
 
       const lects = subjectTasks.filter(t => t.type === 'lecture');
@@ -3244,6 +3601,8 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
         labGap,
         score: scoreData.finalScore,
         dhruvScore: dhruvScoreData.finalScore,
+        unlockedWeight: scoreData.unlockedWeight,
+        dhruvUnlockedWeight: dhruvScoreData.unlockedWeight,
         breakdown: scoreData.breakdown,
         dhruvBreakdown: dhruvScoreData.breakdown,
         weights: scoreData.weights
@@ -3252,6 +3611,8 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
 
     const totalProjectedScore = items.reduce((acc, curr) => acc + curr.score, 0);
     const totalDhruvScore = items.reduce((acc, curr) => acc + curr.dhruvScore, 0);
+    const totalUnlockedWeight = items.reduce((acc, curr) => acc + curr.unlockedWeight, 0);
+    const totalDhruvUnlockedWeight = items.reduce((acc, curr) => acc + curr.dhruvUnlockedWeight, 0);
     const maxPossibleScore = count * 100;
 
     return {
@@ -3264,6 +3625,8 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
       grandTotalPending: grandTotalLectures - grandTotalCompleted,
       totalProjectedScore,
       totalDhruvScore,
+      totalUnlockedWeight,
+      totalDhruvUnlockedWeight,
       maxPossibleScore
     };
   }, [subjectGroups]);
@@ -3364,100 +3727,154 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
   };
 
   return (
-    <div className="summary-container unified-summary">
+    <div className="summary-container">
       {(mode === 'overview' || mode === 'detailed') && (
-        <div className="overall-grid">
-          <div className="overall-card attendance-card glass shadow-lg">
-            <div className="overall-info">
-              <PieChart size={40} className="text-primary" />
-              <div>
-                <h2>{format2(summaryData.overallAttendance)}%</h2>
-                <p>Overall Attendance</p>
+        <div className="overall-grid" style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
+          gap: '24px', 
+          marginBottom: '40px' 
+        }}>
+          {/* Attendance Card */}
+          <div className="overall-card analytics-card-premium" style={{
+            background: 'linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%)',
+            borderLeft: '5px solid #3b82f6'
+          }}>
+            <div className="card-top-accent">
+              <div className="icon-box" style={{ background: '#dbeafe', color: '#1d4ed8' }}>
+                <PieChart size={24} strokeWidth={2.5} />
+              </div>
+              <span className="card-type-tag">Attendance</span>
+            </div>
+            <div className="card-main-content">
+              <div className="main-value-group">
+                <h2 style={{ color: '#1e3a8a' }}>{format2(summaryData.overallAttendance)}<span className="percent-sign">%</span></h2>
+                <p className="value-label">Global Attendance Rate</p>
+              </div>
+              <div className="mini-stats-row">
+                <div className="mini-stat">
+                  <span className="ms-label">Attended</span>
+                  <span className="ms-value">{summaryData.grandTotalAttended}</span>
+                </div>
+                <div className="ms-divider"></div>
+                <div className="mini-stat">
+                  <span className="ms-label">Total</span>
+                  <span className="ms-value">{summaryData.grandTotalLectures}</span>
+                </div>
               </div>
             </div>
-            <div className="overall-stats-pill">
-              <span className="stats-label">Lectures Attended</span>
-              <span className="stats-value">{summaryData.grandTotalAttended}/{summaryData.grandTotalLectures}</span>
+            <div className="card-progress-track">
+              <div className="card-progress-fill" style={{ width: `${summaryData.overallAttendance}%`, background: '#3b82f6' }}></div>
             </div>
           </div>
 
-          <div className="overall-card completion-card glass shadow-lg">
-            <div className="overall-info">
-              <CheckCircle2 size={40} className="text-success" />
-              <div>
-                <h2>{format2(summaryData.overallCompletion)}%</h2>
-                <p>Overall Completion</p>
+          {/* Completion Card */}
+          <div className="overall-card analytics-card-premium" style={{
+            background: 'linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%)',
+            borderLeft: '5px solid #10b981'
+          }}>
+            <div className="card-top-accent">
+              <div className="icon-box" style={{ background: '#dcfce7', color: '#059669' }}>
+                <CheckCircle2 size={24} strokeWidth={2.5} />
+              </div>
+              <span className="card-type-tag">Completion</span>
+            </div>
+            <div className="card-main-content">
+              <div className="main-value-group">
+                <h2 style={{ color: '#064e3b' }}>{format2(summaryData.overallCompletion)}<span className="percent-sign">%</span></h2>
+                <p className="value-label">Study Progression</p>
+              </div>
+              <div className="mini-stats-row">
+                <div className="mini-stat">
+                  <span className="ms-label">Completed</span>
+                  <span className="ms-value">{summaryData.grandTotalCompleted}</span>
+                </div>
+                <div className="ms-divider"></div>
+                <div className="mini-stat">
+                  <span className="ms-label">Left</span>
+                  <span className="ms-value" style={{ color: '#ef4444' }}>{summaryData.grandTotalPending}</span>
+                </div>
               </div>
             </div>
-            <div className="overall-stats-pill">
-              <span className="stats-label">Lectures Done</span>
-              <span className="stats-value">{summaryData.grandTotalCompleted}/{summaryData.grandTotalLectures}</span>
+            <div className="card-progress-track">
+              <div className="card-progress-fill" style={{ width: `${summaryData.overallCompletion}%`, background: '#10b981' }}></div>
             </div>
           </div>
 
-          <div className="overall-card glass shadow-lg" style={{ borderLeft: '4px solid #f43f5e' }}>
-            <div className="overall-info">
-              <div style={{ background: '#fff1f2', padding: '10px', borderRadius: '12px' }}>
-                <Clock size={32} style={{ color: '#f43f5e' }} />
+          {/* Score/Comparison Card */}
+          <div className="overall-card analytics-card-premium comparison-card" style={{
+            background: 'linear-gradient(135deg, #ffffff 0%, #faf5ff 100%)',
+            borderLeft: '5px solid #8b5cf6',
+            gridColumn: 'span 1'
+          }}>
+            <div className="card-top-accent">
+              <div className="icon-box" style={{ background: '#f3e8ff', color: '#7e22ce' }}>
+                <Award size={24} strokeWidth={2.5} />
               </div>
-              <div>
-                <h2 style={{ color: '#f43f5e', fontSize: '2.2rem' }}>{summaryData.grandTotalPending}</h2>
-                <p style={{ fontWeight: 700, color: '#9f1239' }}>Left Lectures</p>
-              </div>
+              <span className="card-type-tag">Performance Hub</span>
             </div>
-            <div className="overall-stats-pill" style={{ background: 'rgba(244, 63, 94, 0.05)' }}>
-              <span className="stats-label" style={{ color: '#be123c' }}>Total Pending Tasks</span>
-              <span className="stats-value" style={{ color: '#f43f5e' }}>{summaryData.grandTotalPending} across all subjects</span>
-            </div>
-          </div>
-
-          <div className="overall-card score-card glass shadow-lg">
-            <div className="overall-info" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <Award size={40} className="text-warning" />
-                <div style={{ display: 'flex', gap: '24px' }}>
-                  <div>
-                    <h2 style={{ fontSize: '2.2rem' }}>{format2(summaryData.totalProjectedScore)}</h2>
-                    <p>Your Marks</p>
+            
+            <div className="comparison-display">
+              <div className="user-score-box">
+                <div className="score-header">
+                  <div className="avatar-mini" style={{ background: '#eff6ff', color: '#1d4ed8' }}>U</div>
+                  <span>You</span>
+                </div>
+                <h3>{format2(summaryData.totalProjectedScore)}</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="score-percent">{(summaryData.maxPossibleScore > 0 ? (summaryData.totalProjectedScore / summaryData.maxPossibleScore) * 100 : 0).toFixed(1)}% Current</span>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#6366f1', background: '#eef2ff', padding: '2px 6px', borderRadius: '4px' }}>{calculateCGPA(summaryData.totalProjectedScore, summaryData.items.length).toFixed(3)}</span>
                   </div>
-                  <div style={{ borderLeft: '2px solid rgba(245, 158, 11, 0.2)', paddingLeft: '24px' }}>
-                    <h2 style={{ fontSize: '2.2rem', color: '#f59e0b' }}>{format2(summaryData.totalDhruvScore)}</h2>
-                    <p>Dhruv's Marks</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingLeft: '2px', borderLeft: '2px solid #e0e7ff' }}>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>End-Sem Prediction</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 900, color: '#4f46e5' }}>
+                      {calculateCGPA(
+                        summaryData.totalUnlockedWeight > 0 ? (summaryData.totalProjectedScore / summaryData.totalUnlockedWeight) : 0,
+                        1
+                      ).toFixed(3)} CGPA
+                    </span>
                   </div>
                 </div>
               </div>
-
-              <div className="leader-pill" style={{
-                background: summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#ecfdf5' : '#fffbeb',
-                color: summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#059669' : '#d97706',
-                padding: '8px 16px',
-                borderRadius: '1000px',
-                fontSize: '0.85rem',
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                alignSelf: 'stretch',
-                justifyContent: 'center',
-                border: `1px solid ${summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? '#d1fae5' : '#fef3c7'}`
-              }}>
-                <Trophy size={16} />
-                <span>
-                  {Math.abs(summaryData.totalProjectedScore - summaryData.totalDhruvScore) < 0.01
-                    ? "It's a Tie!"
-                    : summaryData.totalProjectedScore > summaryData.totalDhruvScore
-                      ? `You are ahead by ${format2(summaryData.totalProjectedScore - summaryData.totalDhruvScore)}`
-                      : `Dhruv is ahead by ${format2(summaryData.totalDhruvScore - summaryData.totalProjectedScore)}`
-                  }
-                </span>
+              
+              <div className="vs-badge">VS</div>
+              
+              <div className="user-score-box friend">
+                <div className="score-header">
+                  <div className="avatar-mini" style={{ background: '#fffbeb', color: '#f59e0b' }}>D</div>
+                  <span>Dhruv</span>
+                </div>
+                <h3>{format2(summaryData.totalDhruvScore)}</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexDirection: 'row-reverse' }}>
+                     <span className="score-percent">{(summaryData.maxPossibleScore > 0 ? (summaryData.totalDhruvScore / summaryData.maxPossibleScore) * 100 : 0).toFixed(1)}% Current</span>
+                     <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#f59e0b', background: '#fffbeb', padding: '2px 6px', borderRadius: '4px' }}>{calculateCGPA(summaryData.totalDhruvScore, summaryData.items.length).toFixed(3)}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingRight: '2px', borderRight: '2px solid #fef3c7', alignItems: 'flex-end' }}>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>End-Sem Prediction</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 900, color: '#d97706' }}>
+                      {calculateCGPA(
+                        summaryData.totalDhruvUnlockedWeight > 0 ? (summaryData.totalDhruvScore / summaryData.totalDhruvUnlockedWeight) : 0,
+                        1
+                      ).toFixed(3)} CGPA
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="overall-stats-pill">
-              <span className="stats-label">Max Possible: {summaryData.maxPossibleScore}</span>
-              <div style={{ display: 'flex', gap: '12px', fontSize: '0.9rem', fontWeight: 700 }}>
-                <span className="stats-value" style={{ fontSize: '1rem' }}>{summaryData.maxPossibleScore > 0 ? format2((summaryData.totalProjectedScore / summaryData.maxPossibleScore) * 100) : 0}%</span>
-                <span style={{ opacity: 0.3 }}>|</span>
-                <span className="stats-value" style={{ fontSize: '1rem', color: '#f59e0b' }}>{summaryData.maxPossibleScore > 0 ? format2((summaryData.totalDhruvScore / summaryData.maxPossibleScore) * 100) : 0}%</span>
+
+            <div className="performance-footer">
+              <div className={`leader-indicator ${summaryData.totalProjectedScore >= summaryData.totalDhruvScore ? 'win' : 'lose'}`}>
+                <Trophy size={14} />
+                <span>
+                  {Math.abs(summaryData.totalProjectedScore - summaryData.totalDhruvScore) < 0.01
+                    ? "Scores are tied!"
+                    : summaryData.totalProjectedScore > summaryData.totalDhruvScore
+                      ? `Ahead by ${format2(summaryData.totalProjectedScore - summaryData.totalDhruvScore)} pts`
+                      : `Trailing by ${format2(summaryData.totalDhruvScore - summaryData.totalProjectedScore)} pts`
+                  }
+                </span>
               </div>
             </div>
           </div>
@@ -3559,152 +3976,191 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
       )}
 
       {mode === 'detailed' && (
-        <div className="subject-grid">
+        <div className="subject-grid" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
           {summaryData.items.map(item => (
-            <div key={item.name} className="subject-card glass">
-              <div className="subject-card-header">
+            <div key={item.name} className="subject-card premium-card glass">
+              <div className="subject-card-header" style={{ padding: '24px', borderBottom: '1.5px solid #f1f5f9', background: 'rgba(255,255,255,0.4)' }}>
                 <div className="subj-title-group">
-                  <h3>{item.name}</h3>
-                  <span className="lecture-count-pill">{item.class.total + item.lab.total} Total Lectures</span>
+                  <h3 style={{ fontSize: '1.6rem', fontWeight: 900, letterSpacing: '-0.02em', color: '#0f172a' }}>{item.name}</h3>
+                  <div style={{ display: 'flex', gap: '12px', marginTop: '4px' }}>
+                    <span className="lecture-count-pill" style={{ background: '#eff6ff', color: '#1e40af', border: '1px solid #dbeafe', padding: '4px 12px', fontWeight: 700 }}>{item.class.total + item.lab.total} Total Lectures</span>
+                  </div>
                 </div>
-                <div className="header-badges">
-                  <div className={`leader-badge ${item.score >= item.dhruvScore ? 'me' : 'dhruv'}`} style={{
-                    padding: '4px 10px',
-                    borderRadius: '100px',
-                    fontSize: '0.75rem',
-                    fontWeight: 800,
-                    background: item.score >= item.dhruvScore ? '#f0fdf4' : '#fffbeb',
-                    color: item.score >= item.dhruvScore ? '#166534' : '#92400e',
-                    border: `1px solid ${item.score >= item.dhruvScore ? '#bbf7d0' : '#fde68a'}`,
+                
+                <div className="header-performance-stats" style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                   <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '2px' }}>Aggregated Score</div>
+                      <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#1e293b' }}>
+                        {format2(item.score)} <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>/ 100</span>
+                      </div>
+                   </div>
+                   <div className={`leader-badge ${item.score >= item.dhruvScore ? 'me' : 'dhruv'}`} style={{
+                    padding: '12px 20px',
+                    borderRadius: '16px',
+                    background: item.score >= item.dhruvScore ? 'linear-gradient(135deg, #f0fdf4, #dcfce7)' : 'linear-gradient(135deg, #fffbeb, #fef3c7)',
+                    color: item.score >= item.dhruvScore ? '#15803d' : '#92400e',
+                    border: `1.5px solid ${item.score >= item.dhruvScore ? '#bbf7d0' : '#fde68a'}`,
                     display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
-                    gap: '4px'
+                    minWidth: '130px',
+                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)'
                   }}>
-                    <Star size={12} fill="currentColor" />
-                    <span>{Math.abs(item.score - item.dhruvScore) < 0.01 ? "Tie" : item.score > item.dhruvScore ? "You Lead" : "Dhruv Leads"}</span>
-                  </div>
-                  {item.studyGap > 0 && (
-                    <div className="gap-indicator danger" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '4px 10px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Clock size={12} />
-                      <span>{item.studyGap} Left ({item.classGap} Cls | {item.labGap} Lab)</span>
-                    </div>
-                  )}
-                  <div className="score-badge" style={{ background: '#fffbeb', border: '1px solid #fef3c7' }}>
-                    <Award size={14} />
-                    <span style={{ color: '#92400e' }}>You: <strong>{format2(item.score)}</strong> | Dhruv: <strong style={{ color: '#d97706' }}>{format2(item.dhruvScore)}</strong></span>
+                    <Star size={16} fill="currentColor" style={{ marginBottom: '4px' }} />
+                    <span style={{ fontSize: '0.85rem', fontWeight: 800 }}>{Math.abs(item.score - item.dhruvScore) < 0.01 ? "Tie" : item.score > item.dhruvScore ? "You Lead" : "Dhruv Leads"}</span>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.8, fontWeight: 700 }}>Gap: {format2(Math.abs(item.score - item.dhruvScore))}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="dual-progress-section">
-                <div className="metric-column">
-                  <span className="metric-hdr">Attendance (50/50)</span>
-                  <div className="detail-row">
-                    <div className="detail-label">
-                      <span>Class</span>
-                      <span className="count-small">{item.class.attendanceCount}/{item.class.total} (U) | {item.class.dhruvAttendanceCount}/{item.class.total} (D)</span>
-                    </div>
-                    <div className="detail-bar-bg">
-                      <div className="detail-bar class-bar" style={{ width: `${item.class.attendancePercent}%`, opacity: 0.6 }}></div>
-                      <div className="detail-bar class-bar" style={{ width: `${item.class.dhruvAttendancePercent}%`, position: 'absolute', top: 0, height: '4px', background: '#f59e0b' }}></div>
-                    </div>
-                  </div>
-                  <div className="detail-row">
-                    <div className="detail-label">
-                      <span>Lab</span>
-                      <span className="count-small">{item.lab.attendanceCount}/{item.lab.total} (U) | {item.lab.dhruvAttendanceCount}/{item.lab.total} (D)</span>
-                    </div>
-                    <div className="detail-bar-bg">
-                      <div className="detail-bar lab-bar" style={{ width: `${item.lab.attendancePercent}%`, opacity: 0.6 }}></div>
-                      <div className="detail-bar lab-bar" style={{ width: `${item.lab.dhruvAttendancePercent}%`, position: 'absolute', top: 0, height: '4px', background: '#f59e0b' }}></div>
-                    </div>
-                  </div>
-                  <div className="total-badge att" style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                    <span>You: {format2(item.attWeighted)}%</span>
-                    <span>Dhruv: {format2(item.dhruvAttWeighted)}%</span>
-                  </div>
-                  {getCombinedSafeZone(item, threshold) && (
-                    <div className={`safe-zone-mini ${getCombinedSafeZone(item, threshold).status}`} style={{
-                      marginTop: '12px',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      background: getCombinedSafeZone(item, threshold).status === 'safe' ? '#f0fdf4' : getCombinedSafeZone(item, threshold).status === 'warning' ? '#fffbeb' : '#fef2f2',
-                      color: getCombinedSafeZone(item, threshold).status === 'safe' ? '#166534' : getCombinedSafeZone(item, threshold).status === 'warning' ? '#92400e' : '#991b1b',
-                      border: `1px solid ${getCombinedSafeZone(item, threshold).status === 'safe' ? '#bbf7d0' : getCombinedSafeZone(item, threshold).status === 'warning' ? '#fde68a' : '#fecaca'}`
-                    }}>
-                      <Zap size={14} />
-                      <span>{getCombinedSafeZone(item, threshold).msg}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="vertical-divider"></div>
-
-                <div className="metric-column">
-                  <span className="metric-hdr">Completion (50/50)</span>
-                  <div className="detail-row">
-                    <div className="detail-label">
-                      <span>Class</span>
-                      <span className="count-small">{item.class.completionCount}/{item.class.total}</span>
-                    </div>
-                    <div className="detail-bar-bg"><div className="detail-bar completion-bar" style={{ width: `${item.class.completionPercent}%` }}></div></div>
-                  </div>
-                  <div className="detail-row">
-                    <div className="detail-label">
-                      <span>Lab</span>
-                      <span className="count-small">{item.lab.completionCount}/{item.lab.total}</span>
-                    </div>
-                    <div className="detail-bar-bg"><div className="detail-bar completion-bar" style={{ width: `${item.lab.completionPercent}%` }}></div></div>
-                  </div>
-                  <div className="total-badge comp">Completed: {format2(item.compWeighted)}%</div>
-                </div>
-              </div>
-
-              <div className="score-breakdown-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
-                {[
-                  { label: 'Attendance', key: 'attendance', color: '#8b5cf6', weightKey: 'attendance' },
-                  { label: 'Assignments', key: 'assignment', color: '#6366f1', weightKey: 'assignment' },
-                  { label: 'Projects', key: 'project', color: '#8b5cf6', weightKey: 'project' },
-                  { label: 'Contests', key: 'contest', color: '#10b981', weightKey: 'contest' },
-                  { label: 'Mid Sem', key: 'midSem', color: '#f59e0b', weightKey: 'midSem' },
-                  { label: 'End Sem', key: 'endSem', color: '#3b82f6', weightKey: 'endSem' }
-                ].map(comp => (
-                  (item.weights[comp.weightKey] > 0 || comp.key === 'attendance') && (
-                    <div key={comp.key} className="score-item">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <span className="s-label">{comp.label}</span>
-                        <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8' }}>/{format2(item.weights[comp.weightKey] * 100)}</span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700 }}>
-                          <span style={{ color: comp.color }}>{format2(item.breakdown[comp.key])}</span>
-                          <span style={{ color: '#f59e0b' }}>{format2(item.dhruvBreakdown[comp.key])}</span>
-                        </div>
-                        <div className="mini-score-bar" style={{ height: '8px', background: '#f1f5f9', position: 'relative' }}>
-                          <div className="fill" style={{
-                            width: `${(item.breakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`,
-                            backgroundColor: comp.color,
-                            height: '100%',
-                            opacity: 0.7
-                          }}></div>
-                          <div className="fill" style={{
-                            width: `${(item.dhruvBreakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`,
-                            backgroundColor: '#f59e0b',
-                            height: '3px',
-                            position: 'absolute',
-                            bottom: 0,
-                            left: 0
-                          }}></div>
-                        </div>
+              <div className="subject-card-body" style={{ padding: '32px' }}>
+                <div className="dual-progress-section" style={{ background: 'transparent', padding: 0, border: 'none', gap: '48px', marginBottom: '40px' }}>
+                  {/* Attendance Section */}
+                  <div className="metric-column">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <span className="metric-hdr" style={{ margin: 0 }}>Attendance Progress</span>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 800, padding: '4px 10px', background: '#eff6ff', color: '#1d4ed8', borderRadius: '8px' }}>U: {format2(item.attWeighted)}%</span>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 800, padding: '4px 10px', background: '#fffbeb', color: '#f59e0b', borderRadius: '8px' }}>D: {format2(item.dhruvAttWeighted)}%</span>
                       </div>
                     </div>
-                  )
-                ))}
+                    
+                    <div className="performance-row-detailed">
+                      <div className="pr-label">
+                        <span className="pr-type">Theory Classes</span>
+                        <span className="pr-count">{item.class.attendanceCount}/{item.class.total}</span>
+                      </div>
+                      <div className="dual-bar-container" style={{ height: '14px', background: '#f1f5f9', borderRadius: '100px', overflow: 'hidden', position: 'relative' }}>
+                        <div className="bar-u" style={{ width: `${item.class.attendancePercent}%`, background: 'linear-gradient(to right, #60a5fa, #3b82f6)', height: '100%', position: 'absolute', top: 0, left: 0, opacity: 1, zIndex: 2 }}></div>
+                        <div className="bar-d" style={{ width: `${item.class.dhruvAttendancePercent}%`, background: '#f59e0b', height: '4px', position: 'absolute', bottom: 0, left: 0, zIndex: 3 }}></div>
+                      </div>
+                    </div>
+
+                    <div className="performance-row-detailed" style={{ marginTop: '16px' }}>
+                      <div className="pr-label">
+                        <span className="pr-type">Lab Sessions</span>
+                        <span className="pr-count">{item.lab.attendanceCount}/{item.lab.total}</span>
+                      </div>
+                      <div className="dual-bar-container" style={{ height: '14px', background: '#f1f5f9', borderRadius: '100px', overflow: 'hidden', position: 'relative' }}>
+                        <div className="bar-u" style={{ width: `${item.lab.attendancePercent}%`, background: 'linear-gradient(to right, #34d399, #10b981)', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 2 }}></div>
+                        <div className="bar-d" style={{ width: `${item.lab.dhruvAttendancePercent}%`, background: '#f59e0b', height: '4px', position: 'absolute', bottom: 0, left: 0, zIndex: 3 }}></div>
+                      </div>
+                    </div>
+
+                    {getCombinedSafeZone(item, threshold) && (
+                      <div className={`safe-zone-pill-premium ${getCombinedSafeZone(item, threshold).status}`} style={{
+                        marginTop: '20px',
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        fontSize: '0.85rem',
+                        fontWeight: 800,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        background: getCombinedSafeZone(item, threshold).status === 'safe' ? '#f0fdf4' : getCombinedSafeZone(item, threshold).status === 'warning' ? '#fffbeb' : '#fef2f2',
+                        color: getCombinedSafeZone(item, threshold).status === 'safe' ? '#166534' : getCombinedSafeZone(item, threshold).status === 'warning' ? '#92400e' : '#991b1b',
+                        border: `1.5px solid ${getCombinedSafeZone(item, threshold).status === 'safe' ? '#bbf7d0' : getCombinedSafeZone(item, threshold).status === 'warning' ? '#fde68a' : '#fecaca'}`
+                      }}>
+                        <div className="zap-box" style={{ padding: '6px', background: 'rgba(255,255,255,0.5)', borderRadius: '8px' }}>
+                          <Zap size={16} fill="currentColor" />
+                        </div>
+                        <span>{getCombinedSafeZone(item, threshold).msg}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="vertical-divider" style={{ width: '2px', background: 'linear-gradient(to bottom, transparent, #e2e8f0, transparent)' }}></div>
+
+                  {/* Completion Section */}
+                  <div className="metric-column">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <span className="metric-hdr" style={{ margin: 0 }}>Study Completion</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 800, padding: '4px 10px', background: '#f0fdf4', color: '#166534', borderRadius: '8px' }}>Avg: {format2(item.compWeighted)}%</span>
+                    </div>
+
+                    <div className="performance-row-detailed">
+                      <div className="pr-label">
+                        <span className="pr-type">Theory Backlog</span>
+                        <span className="pr-count" style={{ color: item.classGap > 0 ? '#ef4444' : '#10b981' }}>{item.classGap > 0 ? `${item.classGap} pending` : 'All caught up'}</span>
+                      </div>
+                      <div className="progress-bar-premium" style={{ height: '14px', background: '#f1f5f9', borderRadius: '100px', overflow: 'hidden' }}>
+                        <div className="fill" style={{ width: `${item.class.completionPercent}%`, background: 'linear-gradient(to right, #8b5cf6, #7c3aed)', height: '100%' }}></div>
+                      </div>
+                    </div>
+
+                    <div className="performance-row-detailed" style={{ marginTop: '16px' }}>
+                      <div className="pr-label">
+                        <span className="pr-type">Lab Work</span>
+                        <span className="pr-count" style={{ color: item.labGap > 0 ? '#ef4444' : '#10b981' }}>{item.labGap > 0 ? `${item.labGap} pending` : 'All caught up'}</span>
+                      </div>
+                      <div className="progress-bar-premium" style={{ height: '14px', background: '#f1f5f9', borderRadius: '100px', overflow: 'hidden' }}>
+                        <div className="fill" style={{ width: `${item.lab.completionPercent}%`, background: 'linear-gradient(to right, #ec4899, #db2777)', height: '100%' }}></div>
+                      </div>
+                    </div>
+
+                    {item.studyGap > 0 && (
+                      <div style={{ marginTop: '20px', padding: '12px 16px', borderRadius: '12px', background: '#fff1f2', border: '1px solid #ffe4e6', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                         <Clock size={18} style={{ color: '#f43f5e' }} />
+                         <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#9f1239' }}>{item.studyGap} Lectures still pending study across both modes.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="score-breakdown-grid-detailed" style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                  gap: '20px',
+                  padding: '24px',
+                  background: '#f8fafc',
+                  borderRadius: '24px',
+                  border: '1.5px solid #f1f5f9'
+                }}>
+                  {[
+                    { label: 'Attendance', key: 'attendance', icon: CheckCircle, color: '#3b82f6', weightKey: 'attendance' },
+                    { label: 'Assignments', key: 'assignment', icon: FileText, color: '#6366f1', weightKey: 'assignment' },
+                    { label: 'Projects', key: 'project', icon: Layers, color: '#8b5cf6', weightKey: 'project' },
+                    { label: 'Contests', key: 'contest', icon: Trophy, color: '#10b981', weightKey: 'contest' },
+                    { label: 'Mid Sem', key: 'midSem', icon: Rocket, color: '#f59e0b', weightKey: 'midSem' },
+                    { label: 'End Sem', key: 'endSem', icon: Award, color: '#3b82f6', weightKey: 'endSem' }
+                  ].map(comp => (
+                    (item.weights[comp.weightKey] > 0 || comp.key === 'attendance') && (
+                      <div key={comp.key} className="breakdown-stat-item" style={{ background: 'white', padding: '16px', borderRadius: '16px', border: '1.5px solid #f1f5f9', transition: 'all 0.2s ease' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                          <div style={{ pading: '6px', borderRadius: '8px', background: `${comp.color}10`, color: comp.color }}>
+                            <comp.icon size={16} strokeWidth={2.5} />
+                          </div>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>{comp.label}</span>
+                          {comp.key === 'assignment' && (
+                            <span style={{ marginLeft: 'auto', fontSize: '0.6rem', fontWeight: 800, color: '#8b5cf6', background: '#ede9fe', padding: '2px 7px', borderRadius: '100px', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>70% / 50%</span>
+                          )}
+                        </div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#94a3b8' }}>Score</span>
+                            <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#1e293b' }}>{format2(item.breakdown[comp.key])}</span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                             <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#94a3b8' }}>Dhruv</span>
+                             <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#f59e0b' }}>{format2(item.dhruvBreakdown[comp.key])}</span>
+                          </div>
+                        </div>
+
+                        <div className="mini-comparison-progress" style={{ height: '6px', background: '#f1f5f9', borderRadius: '100px', overflow: 'hidden', position: 'relative' }}>
+                           <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', background: comp.color, width: `${(item.breakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`, borderRadius: '100px', opacity: 0.8, zIndex: 2 }}></div>
+                           <div style={{ position: 'absolute', bottom: 0, left: 0, height: '2px', background: '#f59e0b', width: `${(item.dhruvBreakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`, zIndex: 3 }}></div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '0.65rem', fontWeight: 700, color: '#94a3b8' }}>
+                           <span>Max: {format2(item.weights[comp.weightKey] * 100)}</span>
+                           <span style={{ color: item.breakdown[comp.key] >= item.dhruvBreakdown[comp.key] ? '#10b981' : '#f59e0b' }}>
+                             {item.breakdown[comp.key] >= item.dhruvBreakdown[comp.key] ? 'Ahead' : 'Behind'}
+                           </span>
+                        </div>
+                      </div>
+                    )
+                  ))}
+                </div>
               </div>
             </div>
           ))}
@@ -4465,6 +4921,7 @@ function ScheduleView({ tasks, currentTime }) {
 
 function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
   const [filterSubject, setFilterSubject] = useState('All');
+  const [filterStatus, setFilterStatus] = useState('All'); // 'All', 'Present', 'Absent'
   const [searchQuery, setSearchQuery] = useState('');
 
   const allLectures = useMemo(() => {
@@ -4473,6 +4930,13 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
     // Subject Filter
     if (filterSubject !== 'All') {
       filtered = filtered.filter(t => t.subjectName === filterSubject);
+    }
+
+    // Status Filter (Attendance)
+    if (filterStatus === 'Present') {
+      filtered = filtered.filter(t => t.present !== false);
+    } else if (filterStatus === 'Absent') {
+      filtered = filtered.filter(t => t.present === false);
     }
 
     // Search Filter
@@ -4486,22 +4950,24 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
 
     // Sort by date descending (newest first)
     return filtered.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-  }, [tasks, filterSubject, searchQuery]);
+  }, [tasks, filterSubject, filterStatus, searchQuery]);
 
   const stats = useMemo(() => {
-    const regularLectures = allLectures;
-    const total = regularLectures.length;
-    if (total === 0) return { total: 0, attendance: 0, completion: 0 };
+    // Current filtered view stats
+    const filteredTotal = allLectures.length;
+    const filteredCompleted = allLectures.filter(t => t.completed).length;
 
-    const present = regularLectures.filter(t => t.present !== false).length;
-    const completed = regularLectures.filter(t => t.completed).length;
+    // Global attendance stats (requested to remain stable)
+    const globalLectures = tasks.filter(t => t.type === 'lecture');
+    const globalTotal = globalLectures.length;
+    const globalPresent = globalLectures.filter(t => t.present !== false).length;
 
     return {
-      total,
-      attendance: Math.round((present / total) * 100),
-      completion: Math.round((completed / total) * 100)
+      total: filteredTotal,
+      attendance: globalTotal > 0 ? Math.round((globalPresent / globalTotal) * 100) : 0,
+      completion: filteredTotal > 0 ? Math.round((filteredCompleted / filteredTotal) * 100) : 0
     };
-  }, [allLectures]);
+  }, [allLectures, tasks]);
 
   const uniqueSubjects = useMemo(() => {
     const subs = new Set(tasks.map(t => t.subjectName));
@@ -4545,58 +5011,114 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
       </div>
 
       <section className="task-section lecture-section glass" style={{ width: '100%', padding: '24px' }}>
-        <div className="section-header" style={{ marginBottom: '24px', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
-          <div className="section-title-group" style={{ marginBottom: 0 }}>
-            <h3 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Repository</h3>
-            <p className="section-subtitle" style={{ fontSize: '0.9rem' }}>Searching {allLectures.length} files</p>
-          </div>
+        <div className="section-header" style={{ marginBottom: '32px', display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            <div className="section-title-group" style={{ marginBottom: 0 }}>
+              <h3 style={{ fontSize: '1.75rem', fontWeight: 800 }}>Lecture Repository</h3>
+              <p className="section-subtitle" style={{ fontSize: '0.95rem' }}>Searching {allLectures.length} entries</p>
+            </div>
 
-          <div style={{ display: 'flex', gap: '12px', marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+            <div style={{ position: 'relative', width: '300px' }}>
+              <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
               <input
                 type="text"
                 placeholder="Search lectures..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 style={{
-                  padding: '10px 10px 10px 36px',
-                  borderRadius: '12px',
-                  border: '1px solid #e2e8f0',
+                  padding: '12px 12px 12px 42px',
+                  borderRadius: '16px',
+                  border: '1.5px solid #e2e8f0',
                   background: 'white',
                   color: '#1e293b',
-                  width: '240px',
+                  width: '100%',
                   fontWeight: 600,
+                  fontSize: '0.95rem',
                   outline: 'none',
-                  transition: 'all 0.2s'
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
                 }}
-                onFocus={e => e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.2)'}
-                onBlur={e => e.target.style.boxShadow = 'none'}
+                onFocus={e => {
+                  e.target.style.borderColor = '#3b82f6';
+                  e.target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.1)';
+                }}
+                onBlur={e => {
+                  e.target.style.borderColor = '#e2e8f0';
+                  e.target.style.boxShadow = '0 2px 6px rgba(0,0,0,0.02)';
+                }}
               />
               {searchQuery && (
-                <button onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}>
-                  <X size={14} />
+                <button onClick={() => setSearchQuery('')} style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: '#f1f5f9', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', padding: '4px', borderRadius: '50%', transition: 'all 0.2s' }}>
+                  <X size={14} strokeWidth={3} />
                 </button>
               )}
             </div>
+          </div>
 
-            <select
-              value={filterSubject}
-              onChange={(e) => setFilterSubject(e.target.value)}
-              style={{
-                padding: '10px 16px',
-                borderRadius: '12px',
-                border: '1px solid #e2e8f0',
-                background: 'white',
-                color: '#1e293b',
-                outline: 'none',
-                cursor: 'pointer',
-                fontWeight: 700,
-                minWidth: '140px'
-              }}
-            >
-              {uniqueSubjects.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Status Filters */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: '8px' }}>Attendance:</span>
+              <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px', gap: '4px' }}>
+                {['All', 'Present', 'Absent'].map(status => (
+                  <button
+                    key={status}
+                    onClick={() => setFilterStatus(status)}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      background: filterStatus === status ? 'white' : 'transparent',
+                      color: filterStatus === status ? '#3b82f6' : '#64748b',
+                      boxShadow: filterStatus === status ? '0 4px 12px rgba(0,0,0,0.08)' : 'none',
+                    }}
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Subject Filters */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: '8px' }}>Subjects:</span>
+              <div style={{ 
+                display: 'flex', 
+                gap: '8px', 
+                overflowX: 'auto', 
+                paddingBottom: '4px',
+                msOverflowStyle: 'none',
+                scrollbarWidth: 'none',
+                WebkitOverflowScrolling: 'touch'
+              }} className="no-scrollbar">
+                {uniqueSubjects.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setFilterSubject(s)}
+                    style={{
+                      padding: '8px 18px',
+                      borderRadius: '100px',
+                      border: '1.5px solid',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.2s',
+                      borderColor: filterSubject === s ? '#3b82f6' : '#e2e8f0',
+                      background: filterSubject === s ? '#eff6ff' : 'white',
+                      color: filterSubject === s ? '#1d4ed8' : '#475569',
+                      boxShadow: filterSubject === s ? '0 4px 8px rgba(59, 130, 246, 0.15)' : 'none',
+                    }}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
