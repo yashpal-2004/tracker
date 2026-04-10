@@ -48,6 +48,7 @@ import {
   Loader2,
   CheckCircle2,
   CheckCircle,
+  HelpCircle,
   AlertCircle,
   Cloud,
   CloudOff,
@@ -78,7 +79,8 @@ import {
   Coffee,
   User,
   Users,
-  Target
+  Target,
+  Github
 } from 'lucide-react';
 
 const NotionLogo = ({ size = 16, className = "" }) => (
@@ -121,13 +123,13 @@ const CONTEST_SCHEDULE = [
 
 const SUBJECT_THEMES = {
   "DM Class": { primary: "#00aaff", glow: "rgba(0, 170, 255, 0.18)" },
-  "DM Lab":   { primary: "#0088cc", glow: "rgba(0, 136, 204, 0.18)" },
+  "DM Lab": { primary: "#0088cc", glow: "rgba(0, 136, 204, 0.18)" },
   "DVA Class": { primary: "#ff0084", glow: "rgba(255, 0, 132, 0.18)" },
-  "DVA Lab":   { primary: "#cc006a", glow: "rgba(204, 0, 106, 0.18)" },
+  "DVA Lab": { primary: "#cc006a", glow: "rgba(204, 0, 106, 0.18)" },
   "GenAI Class": { primary: "#4c00ff", glow: "rgba(76, 0, 255, 0.18)" },
-  "GenAI Lab":   { primary: "#3d00cc", glow: "rgba(61, 0, 204, 0.18)" },
+  "GenAI Lab": { primary: "#3d00cc", glow: "rgba(61, 0, 204, 0.18)" },
   "SD Class": { primary: "#00ae74", glow: "rgba(0, 174, 116, 0.18)" },
-  "SD Lab":   { primary: "#008b5d", glow: "rgba(0, 139, 93, 0.18)" },
+  "SD Lab": { primary: "#008b5d", glow: "rgba(0, 139, 93, 0.18)" },
   "Analytics": { primary: "#1e293b", glow: "rgba(30, 41, 59, 0.18)" },
   "All Lectures": { primary: "#0f172a", glow: "rgba(15, 23, 42, 0.18)" },
   "Exam Schedule": { primary: "#ef4444", glow: "rgba(239, 68, 68, 0.18)" }
@@ -399,9 +401,9 @@ function App() {
     const metaSubject = baseSubject === 'Home' || baseSubject === 'Analytics' ? activeSubject : baseSubject;
 
     // Find metadata for either exact subject or base subject
-    const candidates = tasks.filter(t => t.type === 'friend_meta' && 
+    const candidates = tasks.filter(t => t.type === 'friend_meta' &&
       (t.subjectName === activeSubject || t.subject === activeSubject || t.subjectName === metaSubject || t.subject === metaSubject));
-    
+
     if (candidates.length === 0) return null;
 
     // Sort to put docs with data/offsets first, then by most recent
@@ -419,7 +421,7 @@ function App() {
     const baseSubject = activeSubject.replace(' Class', '').replace(' Lab', '');
     const metaSubject = baseSubject === 'Home' || baseSubject === 'Analytics' ? activeSubject : baseSubject;
 
-    const duplicates = tasks.filter(t => t.type === 'friend_meta' && 
+    const duplicates = tasks.filter(t => t.type === 'friend_meta' &&
       (t.subjectName === metaSubject || t.subject === metaSubject || t.subjectName === activeSubject || t.subject === activeSubject));
 
     if (duplicates.length > 0) {
@@ -431,6 +433,13 @@ function App() {
       });
     }
   };
+
+  // Reset topic if switching to Lab subject and currently on Projects/Exams
+  useEffect(() => {
+    if (activeSubject?.includes('Lab') && (activeTopic === 'Projects' || activeTopic === 'Exams')) {
+      setActiveTopic('Lectures');
+    }
+  }, [activeSubject, activeTopic]);
 
   const leadMsg = useMemo(() => {
     // Derive unique base subject names from DEFAULT_SUBJECTS
@@ -483,30 +492,30 @@ function App() {
       const lab = getSubStats(labSubjectName);
 
       // Attendance
-      myTotal    += (cls.attPercent * 0.5 + lab.attPercent * 0.5) * (weights.attendance || 0) * 100;
+      myTotal += (cls.attPercent * 0.5 + lab.attPercent * 0.5) * (weights.attendance || 0) * 100;
       dhruvTotal += (cls.dhruvAttPercent * 0.5 + lab.dhruvAttPercent * 0.5) * (weights.attendance || 0) * 100;
 
       // Assignments — fixed 70% for You, 50% for Dhruv
-      myTotal    += 0.70 * (weights.assignment || 0) * 100;
+      myTotal += 0.70 * (weights.assignment || 0) * 100;
       dhruvTotal += 0.50 * (weights.assignment || 0) * 100;
 
       // Contest / MidSem / EndSem — use raw marks from tasks
       ['contest', 'midSem', 'endSem'].forEach(type => {
         const c = cls.getTypeMarks(type);
         const l = lab.getTypeMarks(type);
-        myTotal    += (c.myMarks + l.myMarks);
+        myTotal += (c.myMarks + l.myMarks);
         dhruvTotal += (c.dhruvMarks + l.dhruvMarks);
       });
 
       // Project — based on completion/marks or manual direct marks in friend_meta using the baseName
       const meta = tasks.find(t => t.type === 'friend_meta' && (t.subjectName === baseName || t.subject === baseName));
-      
+
       if (meta && meta.maxProjectMarks > 0) {
         const myM = meta.myProjectMarks || 0;
         const dhruvM = meta.dhruvProjectMarks ?? myM; // Fallback to My Marks if Dhruv's are not explicitly set
         const maxM = meta.maxProjectMarks;
-        
-        myTotal    += (myM / maxM) * (weights.project || 0) * 100;
+
+        myTotal += (myM / maxM) * (weights.project || 0) * 100;
         dhruvTotal += (dhruvM / maxM) * (weights.project || 0) * 100;
       } else {
         const getProjPartialScore = (stats, forDhruv = false) => {
@@ -516,11 +525,11 @@ function App() {
         };
         const cProj = cls.getTypeMarks('project');
         const lProj = lab.getTypeMarks('project');
-        
+
         const myProjScore = getProjPartialScore(cProj, false) * 0.5 + getProjPartialScore(lProj, false) * 0.5;
         const dhruvProjScore = getProjPartialScore(cProj, true) * 0.5 + getProjPartialScore(lProj, true) * 0.5;
-        
-        myTotal    += myProjScore * (weights.project || 0) * 100;
+
+        myTotal += myProjScore * (weights.project || 0) * 100;
         dhruvTotal += dhruvProjScore * (weights.project || 0) * 100;
       }
     });
@@ -531,14 +540,14 @@ function App() {
     let dhruvAssignTotal = 0;
     assignmentBaseSubjects.forEach(baseName => {
       const { weights } = getSubjectWeights(baseName);
-      myAssignTotal    += 0.70 * (weights.assignment || 0) * 100;
+      myAssignTotal += 0.70 * (weights.assignment || 0) * 100;
       dhruvAssignTotal += 0.50 * (weights.assignment || 0) * 100;
     });
 
-    const diffWith    = myTotal - dhruvTotal;
+    const diffWith = myTotal - dhruvTotal;
     const diffWithout = (myTotal - myAssignTotal) - (dhruvTotal - dhruvAssignTotal);
 
-    const fmt = (d) => d > 0 ? `+${d.toFixed(1)}` : d < 0 ? `${d.toFixed(1)}` : '0';
+    const fmt = (d) => d > 0 ? `+${d.toFixed(2)}` : d < 0 ? `${d.toFixed(2)}` : '0';
     const typeOf = (d) => d > 0 ? 'win' : d < 0 ? 'lose' : 'neutral';
 
     return {
@@ -577,7 +586,7 @@ function App() {
             </div>
 
             {!['Home', 'Marks Overview', 'Detailed Analysis', 'Pending Work', 'All Lectures', 'Activity Tracker', 'Exam Schedule', 'Timetable', 'Habits', 'Sleep', 'Focus', 'Safe Zone'].includes(activeSubject) && (
-              <SubjectTabs activeTopic={activeTopic} onChange={setActiveTopic} />
+              <SubjectTabs activeTopic={activeTopic} onChange={setActiveTopic} activeSubject={activeSubject} />
             )}
           </div>
 
@@ -758,14 +767,15 @@ function App() {
   );
 }
 
-function SubjectTabs({ activeTopic, onChange }) {
+function SubjectTabs({ activeTopic, onChange, activeSubject }) {
+  const isLab = activeSubject?.includes('Lab');
   const tabs = [
     { id: 'Lectures', icon: BookOpen },
     { id: 'Assignments', icon: FileCheck },
     { id: 'Quizzes', icon: BrainCircuit },
     { id: 'Projects', icon: Layers },
     { id: 'Exams', icon: GraduationCap }
-  ];
+  ].filter(tab => !(isLab && (tab.id === 'Projects' || tab.id === 'Exams')));
 
   const [indicatorStyle, setIndicatorStyle] = useState({});
   const containerRef = React.useRef(null);
@@ -895,14 +905,7 @@ function BookmarkBar({ activeSubject, onSelect, leadData, time }) {
         <div className="nav-group-wrapper">
           <span className="group-label">Work</span>
           <div className="nav-group section-tasks">
-            <button
-              className={`nav-btn ${activeSubject === 'Pending Work' ? 'active' : ''}`}
-              onClick={() => onSelect('Pending Work')}
-              title="Pending Work"
-            >
-              <Clock size={16} />
-              <span>Pending</span>
-            </button>
+
             <button
               className={`nav-btn ${activeSubject === 'All Lectures' ? 'active' : ''}`}
               onClick={() => onSelect('All Lectures')}
@@ -1034,6 +1037,17 @@ function BookmarkBar({ activeSubject, onSelect, leadData, time }) {
             <div className="link-icon-wrapper"><TrendingUp size={14} /></div>
             <span>DSA Tracker</span>
           </a>
+          <a
+            href="https://github.com/yashpal-2004"
+            target="_blank"
+            rel="noreferrer"
+            className="bookmark-item premium-link"
+            title="My Github Profile"
+            style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '12px', marginLeft: '4px' }}
+          >
+            <div className="link-icon-wrapper" style={{ background: '#0f172a', color: 'white' }}><Github size={14} /></div>
+            <span>Github</span>
+          </a>
         </div>
       </div>
     </div>
@@ -1079,6 +1093,12 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
       setDhruvMarks(d.dhruvMarks || '');
       setMaxMarks(d.maxMarks || '');
       if (d.date) setDate(d.date);
+      // For assignment/quiz, ensure today's date is the default even if a draft exists
+      if (['assignment', 'quiz'].includes(type)) {
+        setDate(new Date().toISOString().split('T')[0]);
+      }
+    } else {
+      setDate(new Date().toISOString().split('T')[0]);
     }
     setIsLoaded(true);
   }, [activeSubject, type]);
@@ -1141,6 +1161,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     setMarks('');
     setDhruvMarks('');
     setMaxMarks('');
+    setDate(new Date().toISOString().split('T')[0]);
     setShowSuggestions(false);
     setSuggestions([]);
   };
@@ -1159,6 +1180,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
     else if (filterMode === 'Important') list = list.filter(t => t.important);
     else if (filterMode === 'Free') list = list.filter(t => t.isFree);
     else if (filterMode === 'Regular') list = list.filter(t => !t.isFree);
+    else if (filterMode === 'Doubt') list = list.filter(t => t.hasDoubt);
     return list;
   }, [tasks, filterMode]);
 
@@ -1228,7 +1250,7 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
           const sumMy = tMarksArr.reduce((acc, t) => acc + (t.marks || 0), 0);
           const sumDhruv = tMarksArr.reduce((acc, t) => acc + (t.dhruvMarks || 0), 0);
           const sumMax = tMarksArr.reduce((acc, t) => acc + (t.maxMarks || 0), 0);
-          
+
           return (
             <>
               <div className="stat-item">
@@ -1288,16 +1310,18 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
             </>
           );
         })()}
-        <div className="stat-item">
-          <div className="stat-info">
-            <div className="stat-label">{type === 'lecture' ? 'ME COMP' : 'ME'}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="stat-value">{completePercent}%</span>
-              <span className="stat-subtext" style={{ opacity: 0.6 }}>{completedCount}/{totalCount}</span>
+        {!['assignment', 'quiz'].includes(type) && (
+          <div className="stat-item">
+            <div className="stat-info">
+              <div className="stat-label">{type === 'lecture' ? 'ME COMP' : 'ME'}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="stat-value">{completePercent}%</span>
+                <span className="stat-subtext" style={{ opacity: 0.6 }}>{completedCount}/{totalCount}</span>
+              </div>
             </div>
           </div>
-        </div>
-        {(type === 'project' || type === 'assignment') && (
+        )}
+        {type === 'project' && (
           <div className="stat-item">
             <div className="stat-info">
               <div className="stat-label">DHRUV</div>
@@ -1328,7 +1352,10 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{ display: 'flex', gap: '6px' }}>
-              {['All', 'Pending', 'Done', 'Important', 'Free', 'Regular'].map(mode => (
+              {(type === 'lecture' 
+                ? ['All', 'Pending', 'Done', 'Important', 'Free', 'Regular']
+                : ['All', 'Pending', 'Done', 'Important', 'Doubt']
+              ).map(mode => (
                 <button
                   key={mode}
                   onClick={() => setFilterMode(mode)}
@@ -1361,10 +1388,10 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
           <div className="modal-content glass" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <div style={{ 
-                  background: 'var(--primary)', 
-                  color: 'white', 
-                  padding: '10px', 
+                <div style={{
+                  background: 'var(--primary)',
+                  color: 'white',
+                  padding: '10px',
                   borderRadius: '12px',
                   display: 'flex',
                   alignItems: 'center',
@@ -1462,39 +1489,39 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                   />
                 </div>
               )}
-              
-              {['project', 'assignment', 'quiz'].includes(type) && (
+
+              {type === 'project' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                   <div className="input-group">
-                      <label style={{ color: 'var(--primary)', opacity: 0.8 }}>My Marks</label>
-                      <input 
-                        type="number" 
-                        placeholder="0"
-                        value={marks} 
-                        onChange={e => setMarks(e.target.value)} 
-                        style={{ border: '1px solid var(--primary-glow)', background: 'white' }}
-                      />
-                   </div>
-                   <div className="input-group">
-                      <label style={{ color: '#f59e0b', opacity: 0.8 }}>Dhruv Marks</label>
-                      <input 
-                        type="number" 
-                        placeholder="0"
-                        value={dhruvMarks} 
-                        onChange={e => setDhruvMarks(e.target.value)} 
-                        style={{ border: '1px solid rgba(245, 158, 11, 0.2)', background: 'white' }}
-                      />
-                   </div>
-                   <div className="input-group">
-                      <label style={{ color: '#64748b' }}>Out of (Max)</label>
-                      <input 
-                        type="number" 
-                        placeholder="100"
-                        value={maxMarks} 
-                        onChange={e => setMaxMarks(e.target.value)} 
-                        style={{ background: 'white' }}
-                      />
-                   </div>
+                  <div className="input-group">
+                    <label style={{ color: 'var(--primary)', opacity: 0.8 }}>My Marks</label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={marks}
+                      onChange={e => setMarks(e.target.value)}
+                      style={{ border: '1px solid var(--primary-glow)', background: 'white' }}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label style={{ color: '#f59e0b', opacity: 0.8 }}>Dhruv Marks</label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={dhruvMarks}
+                      onChange={e => setDhruvMarks(e.target.value)}
+                      style={{ border: '1px solid rgba(245, 158, 11, 0.2)', background: 'white' }}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label style={{ color: '#64748b' }}>Out of (Max)</label>
+                    <input
+                      type="number"
+                      placeholder="100"
+                      value={maxMarks}
+                      onChange={e => setMaxMarks(e.target.value)}
+                      style={{ background: 'white' }}
+                    />
+                  </div>
                 </div>
               )}
 
@@ -1607,73 +1634,34 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
             </div>
           ))}
         </div>
-      ) : ['assignment', 'quiz'].includes(type) ? (
-        /* Compact Grid Layout for Assignments & Quizzes */
-        <div className="compact-grid">
-          {filteredTasks.length === 0 ? (
-            <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem' }}>No matching items found</div>
-          ) : filteredTasks.map(task => (
-            <div key={task.id} className={`grid-item ${task.completed ? 'completed' : ''} ${task.important ? 'important' : ''}`}>
-              <div className="grid-checkbox">
-                <div
-                  className={`custom-checkbox ${task.completed ? 'checked' : ''}`}
-                  onClick={() => onUpdate(task.id, { completed: !task.completed })}
-                >
-                  {task.completed && <Check size={16} color="#10b981" />}
-                </div>
-              </div>
-              <div className="grid-content">
-                <div className="grid-main">
-                  <span className="grid-number">#{task.number}</span>
-                  <span className={`grid-name ${task.completed ? 'strikethrough' : ''}`}>
-                    {task.link ? (
-                      <a href={task.link} target="_blank" rel="noreferrer">
-                        {task.name} <ExternalLink size={12} />
-                      </a>
-                    ) : task.name}
-                  </span>
-                  {task.important && <Star size={14} fill="#f59e0b" className="inline-star" />}
-                </div>
-                <div className="grid-meta">
-                  <span className="meta-tag"><Calendar size={12} /> {formatDate(task.date)}</span>
-                  {type === 'quiz' && task.impQs && (
-                    <span className="meta-tag impqs-tag">⚡ {task.impQs}</span>
-                  )}
-                  {task.completed && <span className="meta-tag status-done">✓ Done</span>}
-                </div>
-              </div>
-              <div className="grid-actions">
-                <button className={`grid-btn ${task.important ? 'active' : ''}`} onClick={() => onUpdate(task.id, { important: !task.important })}>
-                  <Star size={16} fill={task.important ? "currentColor" : "none"} />
-                </button>
-                <button className="grid-btn" onClick={() => onEdit(task)}>
-                  <Edit2 size={16} />
-                </button>
-                <button className="grid-btn delete" onClick={() => onDelete(task.id)}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
       ) : (
-        /* Card Gallery Layout for Projects & Contests */
+        /* Card Gallery Layout for Assignments, Quizzes, Projects & Contests */
         <div className="card-gallery">
-          {tasks.map(task => (
-            <div key={task.id} className={`gallery-card ${task.completed ? 'completed' : ''} ${task.important ? 'important' : ''}`}>
+          {filteredTasks.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem', gridColumn: '1/-1' }}>No matching items found</div>
+          ) : filteredTasks.map(task => (
+            <div key={task.id} className={`gallery-card exam-card ${task.completed ? 'completed' : ''} ${task.important ? 'important' : ''} ${task.hasDoubt ? 'has-doubt' : ''}`}>
               <div className="card-header">
                 <div className="card-number-badge">#{task.number}</div>
                 <div className="card-header-actions">
-                   {task.important && <Star size={16} fill="#f59e0b" className="card-star" />}
-                   <button className="card-btn-minimal" onClick={() => onEdit(task)} title="Edit">
-                     <Edit2 size={13} />
-                   </button>
-                   <button className="card-btn-minimal delete" onClick={() => onDelete(task.id)} title="Delete">
-                     <Trash2 size={13} />
-                   </button>
+                  <button className={`card-btn-minimal ${task.completed ? 'completed' : ''}`} onClick={() => onUpdate(task.id, { completed: !task.completed })} title={task.completed ? "Mark as Pending" : "Mark as Done"}>
+                    <CheckCircle size={14} color={task.completed ? "#10b981" : "currentColor"} />
+                  </button>
+                  <button className={`card-btn-minimal ${task.hasDoubt ? 'active' : ''}`} onClick={() => onUpdate(task.id, { hasDoubt: !task.hasDoubt })} title="Toggle Doubt">
+                    <HelpCircle size={14} color={task.hasDoubt ? "#ef4444" : "currentColor"} />
+                  </button>
+                  <button className="card-btn-minimal" onClick={() => onUpdate(task.id, { important: !task.important })} title="Mark Important">
+                    <Star size={13} fill={task.important ? "#f59e0b" : "none"} color={task.important ? "#f59e0b" : "currentColor"} />
+                  </button>
+                  <button className="card-btn-minimal" onClick={() => onEdit(task)} title="Edit">
+                    <Edit2 size={13} />
+                  </button>
+                  <button className="card-btn-minimal delete" onClick={() => onDelete(task.id)} title="Delete">
+                    <Trash2 size={13} />
+                  </button>
                 </div>
               </div>
-              
+
               <div className="card-body">
                 <h4 className="card-title">
                   {task.link ? (
@@ -1684,40 +1672,58 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
                 </h4>
                 <div className="card-meta">
                   <span className="card-date"><Calendar size={14} /> {formatDate(task.date)}</span>
+                  {type === 'quiz' && task.impQs && (
+                    <span className="meta-tag impqs-tag" style={{ marginLeft: '8px' }}>⚡ {task.impQs}</span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                  {task.completed && (
+                    <div style={{ fontSize: '0.65rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '4px 8px', borderRadius: '6px', fontWeight: 800, border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                      DONE
+                    </div>
+                  )}
+                  {task.hasDoubt && (
+                    <div style={{ fontSize: '0.65rem', color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', padding: '4px 8px', borderRadius: '6px', fontWeight: 800, border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                      HAS DOUBT
+                    </div>
+                  )}
                 </div>
               </div>
-              
-              <div className="card-marks-panel">
-                <div className="marks-grid">
-                  <div className="mark-item user">
-                    <div className="mark-header">
-                      <User size={12} />
-                      <span>YOU</span>
+
+              {!['assignment', 'quiz'].includes(type) && (
+                <div className="card-marks-panel">
+                  <div className="marks-grid">
+                    <div className="mark-item user">
+                      <div className="mark-header">
+                        <User size={12} />
+                        <span>YOU</span>
+                      </div>
+                      <div className="mark-input">
+                        {task.marks !== undefined ? Number(task.marks).toFixed(2) : (tasks.length === 1 && friendMeta?.myProjectMarks !== undefined ? (Number(friendMeta.myProjectMarks).toFixed(2) || "0.00") : "0.00")}
+                      </div>
                     </div>
-                    <div className="mark-input">
-                      {task.marks !== undefined ? task.marks : (tasks.length === 1 && friendMeta?.myProjectMarks !== undefined ? (friendMeta.myProjectMarks || "0") : "0")}
+                    <div className="mark-item friend">
+                      <div className="mark-header">
+                        <Users size={12} />
+                        <span>DHRUV</span>
+                      </div>
+                      <div className="mark-input">
+                        {task.dhruvMarks !== undefined ? Number(task.dhruvMarks).toFixed(2) : (tasks.length === 1 && friendMeta?.dhruvProjectMarks !== undefined ? (Number(friendMeta.dhruvProjectMarks).toFixed(2) || "0.00") : "0.00")}
+                      </div>
                     </div>
-                  </div>
-                  <div className="mark-item friend">
-                    <div className="mark-header">
-                      <Users size={12} />
-                      <span>DHRUV</span>
-                    </div>
-                    <div className="mark-input">
-                      {task.dhruvMarks !== undefined ? task.dhruvMarks : (tasks.length === 1 && friendMeta?.dhruvProjectMarks !== undefined ? (friendMeta.dhruvProjectMarks || "0") : "0")}
-                    </div>
-                  </div>
-                  <div className="mark-item max">
-                    <div className="mark-header">
-                      <Target size={12} />
-                      <span>MAX</span>
-                    </div>
-                    <div className="mark-input">
-                      {task.maxMarks !== undefined ? task.maxMarks : (friendMeta?.maxProjectMarks || 100)}
+                    <div className="mark-item max">
+                      <div className="mark-header">
+                        <Target size={12} />
+                        <span>MAX</span>
+                      </div>
+                      <div className="mark-input">
+                        {task.maxMarks !== undefined ? Number(task.maxMarks).toFixed(2) : (Number(friendMeta?.maxProjectMarks).toFixed(2) || "100.00")}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           ))}
         </div>
@@ -1814,6 +1820,12 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
   const [dhruvCodingCorrect, setDhruvCodingCorrect] = useState('');
   const [showForm, setShowForm] = useState(false);
 
+  // Direct Marks fields
+  const [isDirectMode, setIsDirectMode] = useState(false);
+  const [directMarks, setDirectMarks] = useState('');
+  const [directDhruvMarks, setDirectDhruvMarks] = useState('');
+  const [directMax, setDirectMax] = useState('');
+
   const [isLoaded, setIsLoaded] = useState(false);
 
   const completedCount = tasks.filter(t => t.completed).length;
@@ -1870,6 +1882,10 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
       setWrittenCorrect(d.writtenCorrect || '');
       setWrittenTotal(d.writtenTotal || '');
       setWrittenWeight(d.writtenWeight || '30');
+      setIsDirectMode(d.isDirectMode || false);
+      setDirectMarks(d.directMarks || '');
+      setDirectDhruvMarks(d.directDhruvMarks || '');
+      setDirectMax(d.directMax || '');
     }
     setIsLoaded(true);
   }, [activeSubject]);
@@ -1884,10 +1900,11 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
       contestName,
       hasQuiz, quizCorrect, quizTotal, quizWeight,
       hasCoding, codingCorrect, codingTotal, codingWeight,
-      hasWritten, writtenCorrect, writtenTotal, writtenWeight
+      hasWritten, writtenCorrect, writtenTotal, writtenWeight,
+      isDirectMode, directMarks, directDhruvMarks, directMax
     };
     localStorage.setItem('contestDrafts', JSON.stringify(drafts));
-  }, [contestName, hasQuiz, quizCorrect, quizTotal, quizWeight, hasCoding, codingCorrect, codingTotal, codingWeight, hasWritten, writtenCorrect, writtenTotal, writtenWeight, activeSubject, isLoaded]);
+  }, [contestName, hasQuiz, quizCorrect, quizTotal, quizWeight, hasCoding, codingCorrect, codingTotal, codingWeight, hasWritten, writtenCorrect, writtenTotal, writtenWeight, isDirectMode, directMarks, directDhruvMarks, directMax, activeSubject, isLoaded]);
 
   const calculateMarks = (components, personPrefix = '') => {
     let totalScore = 0;
@@ -1945,40 +1962,50 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
       { correct: dhruvWrittenCorrect, total: writtenTotal, weight: writtenWeight, enabled: hasWritten }
     ];
 
-    const { marks, maxMarks } = calculateMarks(personComponents);
-    const { marks: dhruvMarks } = calculateMarks(dhruvComponents);
+    const { marks, maxMarks } = isDirectMode
+      ? { marks: parseFloat(directMarks) || 0, maxMarks: parseFloat(directMax) || 0 }
+      : calculateMarks(personComponents);
+
+    const { marks: dhruvMarks } = isDirectMode
+      ? { marks: parseFloat(directDhruvMarks) || 0 }
+      : calculateMarks(dhruvComponents);
 
     const data = {
       name: contestName,
       number: count,
       date: contestDate,
-      hasQuiz,
-      hasCoding,
-      hasWritten,
+      isDirectMode,
       marks,
       dhruvMarks,
-      maxMarks
+      maxMarks,
+      completed: marks > 0 || dhruvMarks > 0
     };
 
-    if (hasQuiz) {
-      data.quizCorrect = parseInt(quizCorrect) || 0;
-      data.dhruvQuizCorrect = parseInt(dhruvQuizCorrect) || 0;
-      data.quizTotal = parseInt(quizTotal);
-      data.quizWeight = parseFloat(quizWeight) || 0;
-    }
+    if (!isDirectMode) {
+      data.hasQuiz = hasQuiz;
+      data.hasCoding = hasCoding;
+      data.hasWritten = hasWritten;
 
-    if (hasCoding) {
-      data.codingCorrect = parseInt(codingCorrect) || 0;
-      data.dhruvCodingCorrect = parseInt(dhruvCodingCorrect) || 0;
-      data.codingTotal = parseInt(codingTotal);
-      data.codingWeight = parseFloat(codingWeight) || 0;
-    }
+      if (hasQuiz) {
+        data.quizCorrect = parseInt(quizCorrect) || 0;
+        data.dhruvQuizCorrect = parseInt(dhruvQuizCorrect) || 0;
+        data.quizTotal = parseInt(quizTotal);
+        data.quizWeight = parseFloat(quizWeight) || 0;
+      }
 
-    if (hasWritten) {
-      data.writtenCorrect = parseInt(writtenCorrect) || 0;
-      data.dhruvWrittenCorrect = parseInt(dhruvWrittenCorrect) || 0;
-      data.writtenTotal = parseInt(writtenTotal);
-      data.writtenWeight = parseFloat(writtenWeight) || 0;
+      if (hasCoding) {
+        data.codingCorrect = parseInt(codingCorrect) || 0;
+        data.dhruvCodingCorrect = parseInt(dhruvCodingCorrect) || 0;
+        data.codingTotal = parseInt(codingTotal);
+        data.codingWeight = parseFloat(codingWeight) || 0;
+      }
+
+      if (hasWritten) {
+        data.writtenCorrect = parseInt(writtenCorrect) || 0;
+        data.dhruvWrittenCorrect = parseInt(dhruvWrittenCorrect) || 0;
+        data.writtenTotal = parseInt(writtenTotal);
+        data.writtenWeight = parseFloat(writtenWeight) || 0;
+      }
     }
 
     onAdd(data);
@@ -1994,6 +2021,9 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
     setWrittenCorrect('');
     setDhruvWrittenCorrect('');
     setWrittenTotal('');
+    setDirectMarks('');
+    setDirectDhruvMarks('');
+    setDirectMax('');
   };
 
   const [portalNode, setPortalNode] = useState(null);
@@ -2012,28 +2042,6 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
         <span>{showForm ? 'Cancel' : 'Add Contest'}</span>
       </button>
 
-      <div className="unified-stats-bar">
-        <div className="stat-item">
-          <div className="stat-info">
-            <div className="stat-label">Me</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Trophy size={14} style={{ color: '#10b981' }} />
-              <span className="stat-value">{totalMarks}/{maxMarks}</span>
-              <span className="stat-subtext">({maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : 0}%)</span>
-            </div>
-          </div>
-        </div>
-        <div className="stat-item">
-          <div className="stat-info">
-            <div className="stat-label">DHRUV</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Trophy size={14} style={{ color: '#f59e0b' }} />
-              <span className="stat-value" style={{ color: '#f59e0b' }}>{dhruvTotalMarks}/{maxMarks}</span>
-              <span className="stat-subtext">({maxMarks > 0 ? Math.round((dhruvTotalMarks / maxMarks) * 100) : 0}%)</span>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>,
     portalNode
   );
@@ -2041,9 +2049,19 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
   return (
     <section className="task-section contest-section glass">
       {statsBar}
-      <div className="section-header-compact">
+      <div className="section-header-compact" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="section-title-group">
           <p className="section-subtitle">{totalCount} total contests</p>
+        </div>
+        <div className="section-stats-summary" style={{ display: 'flex', gap: '16px', fontSize: '0.85rem', fontWeight: 800 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10b981', background: 'rgba(16, 185, 129, 0.05)', padding: '4px 10px', borderRadius: '8px' }}>
+            <Trophy size={12} />
+            <span>ME: {totalMarks.toFixed(2)}/{maxMarks.toFixed(2)} <span style={{ opacity: 0.7, fontSize: '0.9em' }}>({maxMarks > 0 ? ((totalMarks / maxMarks) * 100).toFixed(2) : "0.00"}%)</span></span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.05)', padding: '4px 10px', borderRadius: '8px' }}>
+            <Trophy size={12} />
+            <span>DHRUV: {dhruvTotalMarks.toFixed(2)}/{maxMarks.toFixed(2)} <span style={{ opacity: 0.7, fontSize: '0.9em' }}>({maxMarks > 0 ? ((dhruvTotalMarks / maxMarks) * 100).toFixed(2) : "0.00"}%)</span></span>
+          </div>
         </div>
       </div>
 
@@ -2052,10 +2070,10 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
           <div className="modal-content glass" onClick={e => e.stopPropagation()} style={{ maxWidth: '650px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <div style={{ 
-                  background: 'linear-gradient(135deg, #f59e0b, #d97706)', 
-                  color: 'white', 
-                  padding: '12px', 
+                <div style={{
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  color: 'white',
+                  padding: '12px',
                   borderRadius: '16px',
                   display: 'flex',
                   alignItems: 'center',
@@ -2072,7 +2090,13 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
             <form className="modal-fields" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }}>
               {/* Contest Name & Date */}
               <div className="input-group">
-                <label>Contest Details</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label>Contest Details</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', textTransform: 'none', color: isDirectMode ? 'var(--primary)' : 'inherit' }}>
+                    <input type="checkbox" checked={isDirectMode} onChange={e => setIsDirectMode(e.target.checked)} />
+                    Enter marks directly
+                  </label>
+                </div>
                 <div style={{ display: 'flex', gap: '15px' }}>
                   <input
                     placeholder="Contest name"
@@ -2090,7 +2114,25 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
                 </div>
               </div>
 
-              {/* Components Row */}
+              {isDirectMode ? (
+                /* Direct Marks Mode */
+                <div style={{ display: 'flex', gap: '15px', padding: '20px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                  <div className="input-group" style={{ flex: 1 }}>
+                    <label style={{ color: '#10b981' }}>YOUR MARKS</label>
+                    <input type="number" step="0.01" value={directMarks} onChange={e => setDirectMarks(e.target.value)} placeholder="0.00" />
+                  </div>
+                  <div className="input-group" style={{ flex: 1 }}>
+                    <label style={{ color: '#f59e0b' }}>DHRUV MARKS</label>
+                    <input type="number" step="0.01" value={directDhruvMarks} onChange={e => setDirectDhruvMarks(e.target.value)} placeholder="0.00" />
+                  </div>
+                  <div className="input-group" style={{ flex: 1 }}>
+                    <label style={{ color: '#64748b' }}>TOTAL MARKS</label>
+                    <input type="number" step="0.01" value={directMax} onChange={e => setDirectMax(e.target.value)} placeholder="10.00" />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Components Row */}
               <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
                 {/* Quiz Component */}
                 <div style={{ flex: 1, minWidth: '200px', padding: '16px', background: hasQuiz ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255,255,255,0.05)', borderRadius: '16px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid rgba(0,0,0,0.05)' }}>
@@ -2225,8 +2267,10 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
                   </div>
                 )}
               </div>
+            </>
+          )}
 
-              {/* Add Button */}
+          {/* Add Button */}
               <div className="modal-buttons" style={{ marginTop: '20px' }}>
                 <button type="submit" className="save-btn" style={{ background: '#f59e0b', boxShadow: '0 10px 20px -5px rgba(245, 158, 11, 0.3)' }}>
                   <Plus size={20} />
@@ -2240,89 +2284,71 @@ function ContestSection({ activeSubject, tasks, onAdd, onUpdate, onDelete, onEdi
         document.body
       )}
 
-      <div className="task-list" style={{ overflowX: 'auto' }}>
-        <div className="task-list-header">
-          <span className="col-number">No.</span>
-          <span className="col-name">Contest Name</span>
-          <span className="col-quiz" style={{ flex: '0 0 100px', textAlign: 'center' }}>Quiz</span>
-          <span className="col-coding" style={{ flex: '0 0 100px', textAlign: 'center' }}>Coding</span>
-          <span className="col-written" style={{ flex: '0 0 100px', textAlign: 'center' }}>Written</span>
-          <span className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700 }}>You</span>
-          <span className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700, color: '#f59e0b' }}>Dhruv</span>
-          <span className="col-actions">Actions</span>
-        </div>
+      <div className="card-gallery">
         {tasks.map(task => (
-          <div key={task.id} className={`task-item ${task.completed ? 'completed' : ''} ${task.important ? 'important-row' : ''}`}>
-            <div className="col-number">
-              <span className="task-number">#{task.number}</span>
-            </div>
-            <div className="col-name">
-              <span className={`task-name ${task.important ? 'important' : ''}`}>{task.name}</span>
-            </div>
-            <div className="col-quiz" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.8em' }}>
-              {task.hasQuiz ? (
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ opacity: 0.8 }} title={`Weight: ${task.quizWeight}%`}>
-                    U: {task.quizCorrect}/{task.quizTotal}
-                    <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.quizCorrect / task.quizTotal) * 100)}%)</span>
-                  </span>
-                  <span style={{ opacity: 0.8, color: '#f59e0b' }}>
-                    Dhruv: {task.dhruvQuizCorrect ?? '-'}/{task.quizTotal}
-                    {task.dhruvQuizCorrect !== undefined && <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.dhruvQuizCorrect / task.quizTotal) * 100)}%)</span>}
-                  </span>
-                </div>
-              ) : <span style={{ opacity: 0.4 }}>-</span>}
-            </div>
-            <div className="col-coding" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.8em' }}>
-              {task.hasCoding ? (
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ opacity: 0.8 }} title={`Weight: ${task.codingWeight}%`}>
-                    U: {task.codingCorrect}/{task.codingTotal}
-                    <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.codingCorrect / task.codingTotal) * 100)}%)</span>
-                  </span>
-                  <span style={{ opacity: 0.8, color: '#f59e0b' }}>
-                    Dhruv: {task.dhruvCodingCorrect ?? '-'}/{task.codingTotal}
-                    {task.dhruvCodingCorrect !== undefined && <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.dhruvCodingCorrect / task.codingTotal) * 100)}%)</span>}
-                  </span>
-                </div>
-              ) : <span style={{ opacity: 0.4 }}>-</span>}
-            </div>
-            <div className="col-written" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.8em' }}>
-              {task.hasWritten ? (
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ opacity: 0.8 }} title={`Weight: ${task.writtenWeight}%`}>
-                    U: {task.writtenCorrect}/{task.writtenTotal}
-                    <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.writtenCorrect / task.writtenTotal) * 100)}%)</span>
-                  </span>
-                  <span style={{ opacity: 0.8, color: '#f59e0b' }}>
-                    Dhruv: {task.dhruvWrittenCorrect ?? '-'}/{task.writtenTotal}
-                    {task.dhruvWrittenCorrect !== undefined && <span style={{ fontSize: '0.8em', opacity: 0.6 }}> ({Math.round((task.dhruvWrittenCorrect / task.writtenTotal) * 100)}%)</span>}
-                  </span>
-                </div>
-              ) : <span style={{ opacity: 0.4 }}>-</span>}
-            </div>
-            <div className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700, fontSize: '0.9em' }}>
-              <span style={{ color: '#10b981' }}>{task.marks}/{task.maxMarks}</span>
-            </div>
-            <div className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700, fontSize: '0.9em' }}>
-              <span style={{ color: '#f59e0b' }}>{task.dhruvMarks ?? 0}/{task.maxMarks}</span>
-            </div>
-            <div className="col-actions">
-              <div className="task-actions">
-                <button className="edit-btn" onClick={() => onEdit(task)} title="Edit">
-                  <Edit2 size={18} />
+          <div key={task.id} className={`gallery-card exam-card ${task.completed ? 'completed' : ''}`}>
+            <div className="card-header">
+              <div className="card-number-badge">#{task.number}</div>
+              <div className="card-header-actions">
+
+                <button className="card-btn-minimal" onClick={() => onEdit(task)} title="Edit">
+                  <Edit2 size={13} />
                 </button>
-                <button
-                  className="delete-btn"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onDelete(task.id);
-                  }}
-                  title="Delete"
-                >
-                  <Trash2 size={18} />
+                <button className="card-btn-minimal delete" onClick={() => onDelete(task.id)} title="Delete">
+                  <Trash2 size={13} />
                 </button>
+              </div>
+            </div>
+
+            <div className="card-body">
+              <h4 className="card-title">{task.name}</h4>
+              <div className="card-meta">
+                <span className="card-date"><Calendar size={14} /> {formatDate(task.date)}</span>
+              </div>
+
+              {task.isDirectMode && (
+                <div style={{ fontSize: '0.65rem', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)', padding: '4px 8px', borderRadius: '6px', alignSelf: 'flex-start', fontWeight: 800, marginTop: '8px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                  DIRECT ENTRY
+                </div>
+              )}
+
+              {/* Contest Components Breakdown */}
+              <div className="contest-components-mini" style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {task.hasQuiz && (
+                  <div style={{ fontSize: '0.75rem', color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.05)', padding: '6px 10px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 800 }}>Quiz</span>
+                    <span>{task.quizCorrect}/{task.quizTotal} <span style={{ opacity: 0.6 }}>({Math.round((task.quizCorrect / task.quizTotal) * 100)}%)</span></span>
+                  </div>
+                )}
+                {task.hasCoding && (
+                  <div style={{ fontSize: '0.75rem', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.05)', padding: '6px 10px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 800 }}>Coding</span>
+                    <span>{task.codingCorrect}/{task.codingTotal} <span style={{ opacity: 0.6 }}>({Math.round((task.codingCorrect / task.codingTotal) * 100)}%)</span></span>
+                  </div>
+                )}
+                {task.hasWritten && (
+                  <div style={{ fontSize: '0.75rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.05)', padding: '6px 10px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 800 }}>Written</span>
+                    <span>{task.writtenCorrect}/{task.writtenTotal} <span style={{ opacity: 0.6 }}>({Math.round((task.writtenCorrect / task.writtenTotal) * 100)}%)</span></span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="card-marks-panel">
+              <div className="marks-grid">
+                <div className="mark-item user">
+                  <div className="mark-header"><User size={12} /><span>YOU</span></div>
+                  <div className="mark-input">{task.marks?.toFixed(2)}</div>
+                </div>
+                <div className="mark-item friend">
+                  <div className="mark-header"><Users size={12} /><span>DHRUV</span></div>
+                  <div className="mark-input">{task.dhruvMarks?.toFixed(2)}</div>
+                </div>
+                <div className="mark-item max">
+                  <div className="mark-header"><Target size={12} /><span>MAX</span></div>
+                  <div className="mark-input">{task.maxMarks?.toFixed(2)}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -2357,6 +2383,12 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
   const [writtenWeight, setWrittenWeight] = useState('30');
   const [examDate, setExamDate] = useState(new Date().toISOString().split('T')[0]);
   const [showForm, setShowForm] = useState(false);
+
+  // Direct Mode fields
+  const [isDirectMode, setIsDirectMode] = useState(false);
+  const [directMarks, setDirectMarks] = useState('');
+  const [directDhruvMarks, setDirectDhruvMarks] = useState('');
+  const [directMax, setDirectMax] = useState('');
 
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -2426,10 +2458,11 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
       examName,
       hasQuiz, quizCorrect, quizTotal, quizWeight,
       hasCoding, codingCorrect, codingTotal, codingWeight,
-      hasWritten, writtenCorrect, writtenTotal, writtenWeight
+      hasWritten, writtenCorrect, writtenTotal, writtenWeight,
+      isDirectMode, directMarks, directDhruvMarks, directMax
     };
     localStorage.setItem(`${type}Drafts`, JSON.stringify(drafts));
-  }, [examName, hasQuiz, quizCorrect, quizTotal, quizWeight, hasCoding, codingCorrect, codingTotal, codingWeight, hasWritten, writtenCorrect, writtenTotal, writtenWeight, activeSubject, type, isLoaded]);
+  }, [examName, hasQuiz, quizCorrect, quizTotal, quizWeight, hasCoding, codingCorrect, codingTotal, codingWeight, hasWritten, writtenCorrect, writtenTotal, writtenWeight, isDirectMode, directMarks, directDhruvMarks, directMax, activeSubject, type, isLoaded]);
 
   const calculateMarks = (components) => {
     let totalScore = 0;
@@ -2487,40 +2520,50 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
       { correct: dhruvWrittenCorrect, total: writtenTotal, weight: writtenWeight, enabled: hasWritten }
     ];
 
-    const { marks, maxMarks } = calculateMarks(personComponents);
-    const { marks: dhruvMarks } = calculateMarks(dhruvComponents);
+    const { marks, maxMarks } = isDirectMode
+      ? { marks: parseFloat(directMarks) || 0, maxMarks: parseFloat(directMax) || 0 }
+      : calculateMarks(personComponents);
+
+    const { marks: dhruvMarks } = isDirectMode
+      ? { marks: parseFloat(directDhruvMarks) || 0 }
+      : calculateMarks(dhruvComponents);
 
     const data = {
       name: examName,
       number: count,
       date: examDate,
-      hasQuiz,
-      hasCoding,
-      hasWritten,
+      isDirectMode,
       marks,
       dhruvMarks,
-      maxMarks
+      maxMarks,
+      completed: marks > 0 || dhruvMarks > 0
     };
 
-    if (hasQuiz) {
-      data.quizCorrect = parseInt(quizCorrect) || 0;
-      data.dhruvQuizCorrect = parseInt(dhruvQuizCorrect) || 0;
-      data.quizTotal = parseInt(quizTotal);
-      data.quizWeight = parseFloat(quizWeight) || 0;
-    }
+    if (!isDirectMode) {
+      data.hasQuiz = hasQuiz;
+      data.hasCoding = hasCoding;
+      data.hasWritten = hasWritten;
 
-    if (hasCoding) {
-      data.codingCorrect = parseInt(codingCorrect) || 0;
-      data.dhruvCodingCorrect = parseInt(dhruvCodingCorrect) || 0;
-      data.codingTotal = parseInt(codingTotal);
-      data.codingWeight = parseFloat(codingWeight) || 0;
-    }
+      if (hasQuiz) {
+        data.quizCorrect = parseInt(quizCorrect) || 0;
+        data.dhruvQuizCorrect = parseInt(dhruvQuizCorrect) || 0;
+        data.quizTotal = parseInt(quizTotal);
+        data.quizWeight = parseFloat(quizWeight) || 0;
+      }
 
-    if (hasWritten) {
-      data.writtenCorrect = parseInt(writtenCorrect) || 0;
-      data.dhruvWrittenCorrect = parseInt(dhruvWrittenCorrect) || 0;
-      data.writtenTotal = parseInt(writtenTotal);
-      data.writtenWeight = parseFloat(writtenWeight) || 0;
+      if (hasCoding) {
+        data.codingCorrect = parseInt(codingCorrect) || 0;
+        data.dhruvCodingCorrect = parseInt(dhruvCodingCorrect) || 0;
+        data.codingTotal = parseInt(codingTotal);
+        data.codingWeight = parseFloat(codingWeight) || 0;
+      }
+
+      if (hasWritten) {
+        data.writtenCorrect = parseInt(writtenCorrect) || 0;
+        data.dhruvWrittenCorrect = parseInt(dhruvWrittenCorrect) || 0;
+        data.writtenTotal = parseInt(writtenTotal);
+        data.writtenWeight = parseFloat(writtenWeight) || 0;
+      }
     }
 
     onAdd(data);
@@ -2536,6 +2579,9 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
     setWrittenCorrect('');
     setDhruvWrittenCorrect('');
     setWrittenTotal('');
+    setDirectMarks('');
+    setDirectDhruvMarks('');
+    setDirectMax('');
   };
 
   const [portalNode, setPortalNode] = useState(null);
@@ -2554,28 +2600,6 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
         <span>{showForm ? 'Cancel' : title.includes('Mid') ? 'Mid' : 'End'}</span>
       </button>
 
-      <div className="unified-stats-bar">
-        <div className="stat-item">
-          <div className="stat-info">
-            <div className="stat-label">ME</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Trophy size={14} style={{ color: '#10b981' }} />
-              <span className="stat-value">{totalMarks}/{maxMarks}</span>
-              <span className="stat-subtext" style={{ fontSize: '0.65rem' }}>({maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : 0}%)</span>
-            </div>
-          </div>
-        </div>
-        <div className="stat-item">
-          <div className="stat-info">
-            <div className="stat-label">DHRUV</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Trophy size={14} style={{ color: '#f59e0b' }} />
-              <span className="stat-value" style={{ color: '#f59e0b' }}>{dhruvTotalMarks}/{maxMarks}</span>
-              <span className="stat-subtext" style={{ fontSize: '0.65rem' }}>({maxMarks > 0 ? Math.round((dhruvTotalMarks / maxMarks) * 100) : 0}%)</span>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>,
     portalNode
   );
@@ -2583,9 +2607,19 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
   return (
     <section className={`task-section ${type}-section glass`}>
       {statsBar}
-      <div className="section-header-compact">
+      <div className="section-header-compact" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="section-title-group">
           <p className="section-subtitle">{totalCount} total exams</p>
+        </div>
+        <div className="section-stats-summary" style={{ display: 'flex', gap: '16px', fontSize: '0.85rem', fontWeight: 800 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10b981', background: 'rgba(16, 185, 129, 0.05)', padding: '4px 10px', borderRadius: '8px' }}>
+            <Trophy size={12} />
+            <span>ME: {totalMarks.toFixed(2)}/{maxMarks.toFixed(2)} <span style={{ opacity: 0.7, fontSize: '0.9em' }}>({maxMarks > 0 ? ((totalMarks / maxMarks) * 100).toFixed(2) : "0.00"}%)</span></span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.05)', padding: '4px 10px', borderRadius: '8px' }}>
+            <Trophy size={12} />
+            <span>DHRUV: {dhruvTotalMarks.toFixed(2)}/{maxMarks.toFixed(2)} <span style={{ opacity: 0.7, fontSize: '0.9em' }}>({maxMarks > 0 ? ((dhruvTotalMarks / maxMarks) * 100).toFixed(2) : "0.00"}%)</span></span>
+          </div>
         </div>
       </div>
 
@@ -2594,10 +2628,10 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
           <div className="modal-content glass" onClick={e => e.stopPropagation()} style={{ maxWidth: '650px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <div style={{ 
-                  background: 'var(--primary)', 
-                  color: 'white', 
-                  padding: '10px', 
+                <div style={{
+                  background: 'var(--primary)',
+                  color: 'white',
+                  padding: '10px',
                   borderRadius: '12px',
                   display: 'flex',
                   alignItems: 'center',
@@ -2614,7 +2648,13 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
             <form className="modal-fields" onSubmit={(e) => { handleSubmit(e); setShowForm(false); }}>
               {/* Exam Name & Date */}
               <div className="input-group">
-                <label>{title} Details</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label>{title} Details</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', textTransform: 'none', color: isDirectMode ? 'var(--primary)' : 'inherit' }}>
+                    <input type="checkbox" checked={isDirectMode} onChange={e => setIsDirectMode(e.target.checked)} />
+                    Enter marks directly
+                  </label>
+                </div>
                 <div style={{ display: 'flex', gap: '15px' }}>
                   <input
                     placeholder={`${title} name (e.g., ${type === 'midSem' ? 'Mid Term 2024' : 'Finals 2024'})`}
@@ -2632,7 +2672,25 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
                 </div>
               </div>
 
-              {/* Components Row */}
+              {isDirectMode ? (
+                /* Direct Mode Inputs */
+                <div style={{ display: 'flex', gap: '15px', padding: '20px', background: 'rgba(255,255,255,0.05)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                  <div className="input-group" style={{ flex: 1 }}>
+                    <label style={{ color: '#10b981' }}>YOUR MARKS</label>
+                    <input type="number" step="0.01" value={directMarks} onChange={e => setDirectMarks(e.target.value)} placeholder="0.00" />
+                  </div>
+                  <div className="input-group" style={{ flex: 1 }}>
+                    <label style={{ color: '#f59e0b' }}>DHRUV MARKS</label>
+                    <input type="number" step="0.01" value={directDhruvMarks} onChange={e => setDirectDhruvMarks(e.target.value)} placeholder="0.00" />
+                  </div>
+                  <div className="input-group" style={{ flex: 1 }}>
+                    <label style={{ color: '#64748b' }}>TOTAL MARKS</label>
+                    <input type="number" step="0.01" value={directMax} onChange={e => setDirectMax(e.target.value)} placeholder="10.00" />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Components Row */}
               <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
                 {/* Quiz Component */}
                 <div style={{ flex: 1, minWidth: '200px', padding: '16px', background: hasQuiz ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255,255,255,0.05)', borderRadius: '16px', border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid rgba(0,0,0,0.05)' }}>
@@ -2740,8 +2798,10 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
                   </div>
                 )}
               </div>
+            </>
+          )}
 
-              {/* Add Button */}
+          {/* Add Button */}
               <div className="modal-buttons" style={{ marginTop: '20px' }}>
                 <button type="submit" className="save-btn">
                   <Plus size={20} />
@@ -2755,70 +2815,70 @@ function ExamSection({ title, type, activeSubject, tasks, onAdd, onUpdate, onDel
         document.body
       )}
 
-      <div className="task-list" style={{ overflowX: 'auto' }}>
-        <div className="task-list-header">
-          <span className="col-number">No.</span>
-          <span className="col-name">Exam Name</span>
-          <span className="col-quiz" style={{ flex: '0 0 100px', textAlign: 'center' }}>Quiz</span>
-          <span className="col-coding" style={{ flex: '0 0 100px', textAlign: 'center' }}>Coding</span>
-          <span className="col-written" style={{ flex: '0 0 100px', textAlign: 'center' }}>Written</span>
-          <span className="col-marks" style={{ flex: '0 0 100px', textAlign: 'center', fontWeight: 700 }}>Marks</span>
-          <span className="col-actions">Actions</span>
-        </div>
+      <div className="card-gallery">
         {tasks.map(task => (
-          <div key={task.id} className={`task-item ${task.completed ? 'completed' : ''} ${task.important ? 'important-row' : ''}`}>
-            <div className="col-number">
-              <span className="task-number">#{task.number}</span>
-            </div>
-            <div className="col-name">
-              <span className={`task-name ${task.important ? 'important' : ''}`}>{task.name}</span>
-            </div>
-            <div className="col-quiz" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.9em' }}>
-              {task.hasQuiz ? (
-                <span style={{ opacity: 0.8 }} title={`Weight: ${task.quizWeight}%`}>
-                  {task.quizCorrect}/{task.quizTotal}
-                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({Math.round((task.quizCorrect / task.quizTotal) * 100)}%)</span>
-                </span>
-              ) : <span style={{ opacity: 0.4 }}>-</span>}
-            </div>
-            <div className="col-coding" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.9em' }}>
-              {task.hasCoding ? (
-                <span style={{ opacity: 0.8 }} title={`Weight: ${task.codingWeight}%`}>
-                  {task.codingCorrect}/{task.codingTotal}
-                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({Math.round((task.codingCorrect / task.codingTotal) * 100)}%)</span>
-                </span>
-              ) : <span style={{ opacity: 0.4 }}>-</span>}
-            </div>
-            <div className="col-written" style={{ flex: '0 0 100px', textAlign: 'center', fontSize: '0.9em' }}>
-              {task.hasWritten ? (
-                <span style={{ opacity: 0.8 }} title={`Weight: ${task.writtenWeight}%`}>
-                  {task.writtenCorrect}/{task.writtenTotal}
-                  <span style={{ fontSize: '0.75em', opacity: 0.6 }}> ({Math.round((task.writtenCorrect / task.writtenTotal) * 100)}%)</span>
-                </span>
-              ) : <span style={{ opacity: 0.4 }}>-</span>}
-            </div>
-            <div className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700, fontSize: '0.9em' }}>
-              <span style={{ color: '#10b981' }}>{task.marks}/{task.maxMarks}</span>
-            </div>
-            <div className="col-marks" style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 700, fontSize: '0.9em' }}>
-              <span style={{ color: '#f59e0b' }}>{task.dhruvMarks ?? 0}/{task.maxMarks}</span>
-            </div>
-            <div className="col-actions">
-              <div className="task-actions">
-                <button className="edit-btn" onClick={() => onEdit(task)} title="Edit">
-                  <Edit2 size={18} />
+          <div key={task.id} className={`gallery-card exam-card ${task.completed ? 'completed' : ''}`}>
+            <div className="card-header">
+              <div className="card-number-badge">#{task.number}</div>
+              <div className="card-header-actions">
+                <button className="card-btn-minimal" onClick={() => onEdit(task)} title="Edit">
+                  <Edit2 size={13} />
                 </button>
-                <button
-                  className="delete-btn"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onDelete(task.id);
-                  }}
-                  title="Delete"
-                >
-                  <Trash2 size={18} />
+                <button className="card-btn-minimal delete" onClick={() => onDelete(task.id)} title="Delete">
+                  <Trash2 size={13} />
                 </button>
+              </div>
+            </div>
+
+            <div className="card-body">
+              <h4 className="card-title">{task.name}</h4>
+              <div className="card-meta">
+                <span className="card-date"><Calendar size={14} /> {formatDate(task.date)}</span>
+              </div>
+
+              {task.isDirectMode && (
+                <div style={{ fontSize: '0.65rem', color: 'var(--primary)', background: 'var(--primary-glow)', padding: '4px 8px', borderRadius: '6px', alignSelf: 'flex-start', fontWeight: 800, marginTop: '8px' }}>
+                  DIRECT ENTRY
+                </div>
+              )}
+
+              {/* Exam Components Breakdown */}
+              <div className="contest-components-mini" style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {task.hasQuiz && (
+                  <div style={{ fontSize: '0.75rem', color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.05)', padding: '6px 10px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 800 }}>Quiz</span>
+                    <span>{task.quizCorrect}/{task.quizTotal} <span style={{ opacity: 0.6 }}>({Math.round((task.quizCorrect / task.quizTotal) * 100)}%)</span></span>
+                  </div>
+                )}
+                {task.hasCoding && (
+                  <div style={{ fontSize: '0.75rem', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.05)', padding: '6px 10px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 800 }}>Coding</span>
+                    <span>{task.codingCorrect}/{task.codingTotal} <span style={{ opacity: 0.6 }}>({Math.round((task.codingCorrect / task.codingTotal) * 100)}%)</span></span>
+                  </div>
+                )}
+                {task.hasWritten && (
+                  <div style={{ fontSize: '0.75rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.05)', padding: '6px 10px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 800 }}>Written</span>
+                    <span>{task.writtenCorrect}/{task.writtenTotal} <span style={{ opacity: 0.6 }}>({Math.round((task.writtenCorrect / task.writtenTotal) * 100)}%)</span></span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="card-marks-panel">
+              <div className="marks-grid">
+                <div className="mark-item user">
+                  <div className="mark-header"><User size={12} /><span>YOU</span></div>
+                  <div className="mark-input">{task.marks?.toFixed(2)}</div>
+                </div>
+                <div className="mark-item friend">
+                  <div className="mark-header"><Users size={12} /><span>DHRUV</span></div>
+                  <div className="mark-input">{task.dhruvMarks?.toFixed(2)}</div>
+                </div>
+                <div className="mark-item max">
+                  <div className="mark-header"><Target size={12} /><span>MAX</span></div>
+                  <div className="mark-input">{task.maxMarks?.toFixed(2)}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -2857,6 +2917,8 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
   const [dhruvWrittenCorrect, setDhruvWrittenCorrect] = useState(task.dhruvWrittenCorrect || 0);
   const [writtenTotal, setWrittenTotal] = useState(task.writtenTotal || 0);
   const [writtenWeight, setWrittenWeight] = useState(task.writtenWeight || 30);
+
+  const [isDirectMode, setIsDirectMode] = useState(task.isDirectMode || false);
 
   const calculateContestMarks = () => {
     let totalScore = 0;
@@ -2929,10 +2991,11 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
       marks: Number(marks) || 0,
       dhruvMarks: Number(dhruvMarks) || 0,
       maxMarks: Number(maxMarks) || 0,
+      isDirectMode,
       completed: (Number(marks) > 0 || Number(dhruvMarks) > 0) ? true : name !== task.name ? task.completed : task.completed
     };
 
-    if (task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') {
+    if ((task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') && !isDirectMode) {
       const result = calculateContestMarks();
 
       updates.hasQuiz = hasQuiz;
@@ -2972,10 +3035,10 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
       <div className="modal-content glass" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ 
-              background: 'var(--primary)', 
-              color: 'white', 
-              padding: '10px', 
+            <div style={{
+              background: 'var(--primary)',
+              color: 'white',
+              padding: '10px',
               borderRadius: '12px',
               display: 'flex',
               alignItems: 'center',
@@ -2994,18 +3057,18 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
           <div className="input-group">
             <label>Title & Identifier</label>
             <div style={{ display: 'flex', gap: '12px' }}>
-              <input 
+              <input
                 style={{ flex: 3 }}
                 placeholder="Name"
-                value={name} 
-                onChange={e => setName(e.target.value)} 
+                value={name}
+                onChange={e => setName(e.target.value)}
               />
-              <input 
+              <input
                 style={{ flex: 1 }}
-                type="number" 
+                type="number"
                 placeholder="No."
-                value={number} 
-                onChange={e => setNumber(e.target.value)} 
+                value={number}
+                onChange={e => setNumber(e.target.value)}
               />
             </div>
           </div>
@@ -3016,27 +3079,27 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
           </div>
 
           {/* Links Section */}
-          { (task.type === 'lecture' || task.type === 'assignment' || task.type === 'quiz') && (
+          {(task.type === 'lecture' || task.type === 'assignment' || task.type === 'quiz') && (
             <div className="input-group">
               <label>Resources & Notes</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ position: 'relative' }}>
-                  <input 
+                  <input
                     placeholder={task.type === 'lecture' ? "Lecture Link / Notes URL" : "Resource Link"}
                     style={{ width: '100%', paddingLeft: '44px' }}
-                    value={link} 
-                    onChange={e => setLink(e.target.value)} 
+                    value={link}
+                    onChange={e => setLink(e.target.value)}
                   />
                   <BookOpen size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
                 </div>
-                
+
                 {task.type === 'lecture' && (
                   <div style={{ position: 'relative' }}>
-                    <input 
+                    <input
                       placeholder="Notion Notes URL"
                       style={{ width: '100%', paddingLeft: '44px' }}
-                      value={notionLink} 
-                      onChange={e => setNotionLink(e.target.value)} 
+                      value={notionLink}
+                      onChange={e => setNotionLink(e.target.value)}
                     />
                     <div style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5, display: 'flex', alignItems: 'center' }}>
                       <NotionLogo size={18} />
@@ -3049,59 +3112,68 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
           {task.type === 'quiz' && (
             <div className="input-group">
               <label>Important Questions</label>
-              <input 
+              <input
                 placeholder="e.g. Q4, Q7, Topic: BFS..."
-                value={impQs} 
-                onChange={e => setImpQs(e.target.value)} 
+                value={impQs}
+                onChange={e => setImpQs(e.target.value)}
               />
             </div>
           )}
 
-          {['project', 'assignment', 'quiz'].includes(task.type) && (
+          {(task.type === 'project' || (['contest', 'midSem', 'endSem'].includes(task.type) && isDirectMode)) && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-               <div className="input-group">
-                  <label style={{ color: 'var(--primary)', opacity: 0.8 }}>My Marks</label>
-                  <input 
-                    type="number" 
-                    placeholder="0"
-                    value={marks} 
-                    onChange={e => setMarks(e.target.value)} 
-                    style={{ border: '1px solid var(--primary-glow)', background: 'white' }}
-                  />
-               </div>
-               <div className="input-group">
-                  <label style={{ color: '#f59e0b', opacity: 0.8 }}>Dhruv Marks</label>
-                  <input 
-                    type="number" 
-                    placeholder="0"
-                    value={dhruvMarks} 
-                    onChange={e => setDhruvMarks(e.target.value)} 
-                    style={{ border: '1px solid rgba(245, 158, 11, 0.2)', background: 'white' }}
-                  />
-               </div>
-               <div className="input-group">
-                  <label style={{ color: '#64748b' }}>Out of (Max)</label>
-                  <input 
-                    type="number" 
-                    placeholder="100"
-                    value={maxMarks} 
-                    onChange={e => setMaxMarks(e.target.value)} 
-                    style={{ background: 'white' }}
-                  />
-               </div>
+              <div className="input-group">
+                <label style={{ color: 'var(--primary)', opacity: 0.8 }}>My Marks</label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={marks}
+                  onChange={e => setMarks(e.target.value)}
+                  style={{ border: '1px solid var(--primary-glow)', background: 'white' }}
+                />
+              </div>
+              <div className="input-group">
+                <label style={{ color: '#f59e0b', opacity: 0.8 }}>Dhruv Marks</label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={dhruvMarks}
+                  onChange={e => setDhruvMarks(e.target.value)}
+                  style={{ border: '1px solid rgba(245, 158, 11, 0.2)', background: 'white' }}
+                />
+              </div>
+              <div className="input-group">
+                <label style={{ color: '#64748b' }}>Out of (Max)</label>
+                <input
+                  type="number"
+                  placeholder="100"
+                  value={maxMarks}
+                  onChange={e => setMaxMarks(e.target.value)}
+                  style={{ background: 'white' }}
+                />
+              </div>
             </div>
           )}
 
           {/* Performance Data for Contests/Exams */}
-          { (task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') && (
+          {(task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 850, color: 'var(--primary)', opacity: 0.8 }}>Performance Breakdown</label>
-              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 850, color: 'var(--primary)', opacity: 0.8 }}>Performance Breakdown</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 800 }}>
+                  <input type="checkbox" checked={isDirectMode} onChange={e => setIsDirectMode(e.target.checked)} />
+                  Enter marks directly
+                </label>
+              </div>
+
+              {!isDirectMode && (
+                <>
+
               {/* Quiz Component */}
-              <div style={{ 
-                padding: '16px', 
-                background: hasQuiz ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255,255,255,0.05)', 
-                borderRadius: '20px', 
+              <div style={{
+                padding: '16px',
+                background: hasQuiz ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255,255,255,0.05)',
+                borderRadius: '20px',
                 border: hasQuiz ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid rgba(0,0,0,0.05)',
                 transition: 'all 0.3s'
               }}>
@@ -3130,10 +3202,10 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
               </div>
 
               {/* Coding Component */}
-              <div style={{ 
-                padding: '16px', 
-                background: hasCoding ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.05)', 
-                borderRadius: '20px', 
+              <div style={{
+                padding: '16px',
+                background: hasCoding ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.05)',
+                borderRadius: '20px',
                 border: hasCoding ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(0,0,0,0.05)',
                 transition: 'all 0.3s'
               }}>
@@ -3159,9 +3231,61 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
                 )}
               </div>
 
+              {/* Written Component */}
+              <div style={{
+                padding: '16px',
+                background: hasWritten ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255,255,255,0.05)',
+                borderRadius: '20px',
+                border: hasWritten ? '1px solid rgba(59, 130, 246, 0.2)' : '1px solid rgba(0,0,0,0.05)',
+                transition: 'all 0.3s'
+              }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '16px', fontWeight: 800 }}>
+                  <input type="checkbox" checked={hasWritten} onChange={e => setHasWritten(e.target.checked)} />
+                  <span style={{ color: hasWritten ? '#3b82f6' : 'inherit' }}>Written Component</span>
+                </label>
+                {hasWritten && (
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }} className="input-group">
+                      <label style={{ fontSize: '0.65rem' }}>Your Score</label>
+                      <input type="number" value={writtenCorrect} onChange={e => setWrittenCorrect(e.target.value)} placeholder="0" min="0" />
+                    </div>
+                    <div style={{ flex: 1 }} className="input-group">
+                      <label style={{ fontSize: '0.65rem' }}>Dhruv Score</label>
+                      <input type="number" value={dhruvWrittenCorrect} onChange={e => setDhruvWrittenCorrect(e.target.value)} placeholder="0" min="0" style={{ borderColor: '#fcd34d' }} />
+                    </div>
+                    <div style={{ flex: 1 }} className="input-group">
+                      <label style={{ fontSize: '0.65rem' }}>Total Marks</label>
+                      <input type="number" value={writtenTotal} onChange={e => setWrittenTotal(e.target.value)} placeholder="1" min="1" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Weights Row (In Edit Modal) */}
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                {hasQuiz && (
+                  <div style={{ flex: 1, minWidth: '120px' }} className="input-group">
+                    <label style={{ fontSize: '0.65rem', color: '#8b5cf6' }}>Quiz Wt (%)</label>
+                    <input type="number" value={quizWeight} onChange={e => setQuizWeight(e.target.value)} />
+                  </div>
+                )}
+                {hasCoding && (
+                  <div style={{ flex: 1, minWidth: '120px' }} className="input-group">
+                    <label style={{ fontSize: '0.65rem', color: '#10b981' }}>Coding Wt (%)</label>
+                    <input type="number" value={codingWeight} onChange={e => setCodingWeight(e.target.value)} />
+                  </div>
+                )}
+                {hasWritten && (
+                  <div style={{ flex: 1, minWidth: '120px' }} className="input-group">
+                    <label style={{ fontSize: '0.65rem', color: '#3b82f6' }}>Written Wt (%)</label>
+                    <input type="number" value={writtenWeight} onChange={e => setWrittenWeight(e.target.value)} />
+                  </div>
+                )}
+              </div>
+
               {/* Summary of Marks */}
-              <div style={{ 
-                padding: '24px', 
+              <div style={{
+                padding: '24px',
                 background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(59, 130, 246, 0.1))',
                 borderRadius: '24px',
                 border: '1px solid rgba(16, 185, 129, 0.2)',
@@ -3181,6 +3305,8 @@ function EditModal({ task, activeSubject, allTasks, onClose, onSave }) {
                   </div>
                 </div>
               </div>
+              </>
+            )}
             </div>
           )}
         </div>
@@ -3402,14 +3528,14 @@ function ActivityHeatmap({ tasks }) {
 
 function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }) {
   const [confirmTask, setConfirmTask] = useState(null);
-  
+
   const calculateCGPA = (totalScore, count) => {
     if (count === 0) return 0;
     const avg = totalScore / count;
     // Piecewise estimation based on provided Student 1, 2 and 3 benchmarks
     // Higher marks (A/A+) contribute more significantly to the CGPA curve
-    return avg > 68.75 
-      ? (0.1260 * (avg - 68.75) + 7.190) 
+    return avg > 68.75
+      ? (0.1260 * (avg - 68.75) + 7.190)
       : (0.1029 * (avg - 59.5) + 6.238);
   };
 
@@ -3494,14 +3620,14 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
           if (meta && meta.maxProjectMarks > 0) {
             percent = (meta.myProjectMarks || 0) / meta.maxProjectMarks * 100;
             dhruvPercent = (meta.dhruvProjectMarks || (meta.myProjectMarks || 0)) / meta.maxProjectMarks * 100;
-            return { 
-              total: filtered.length, 
-              done: filtered.filter(t => t.completed).length, 
-              percent, 
-              dhruvPercent, 
-              totalMarks: meta.myProjectMarks || 0, 
-              dhruvTotalMarks: meta.dhruvProjectMarks || 0, 
-              maxMarks: meta.maxProjectMarks 
+            return {
+              total: filtered.length,
+              done: filtered.filter(t => t.completed).length,
+              percent,
+              dhruvPercent,
+              totalMarks: meta.myProjectMarks || 0,
+              dhruvTotalMarks: meta.dhruvProjectMarks || 0,
+              maxMarks: meta.maxProjectMarks
             };
           }
         }
@@ -3664,7 +3790,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
       // Needs
       const targetC = (targetW - 0.5 * (pL / tL)) / 0.5;
       const targetL = (targetW - 0.5 * (pC / tC)) / 0.5;
-      
+
       const needRatioC = 1 - targetC;
       const needRatioL = 1 - targetL;
 
@@ -3729,11 +3855,11 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
   return (
     <div className="summary-container">
       {(mode === 'overview' || mode === 'detailed') && (
-        <div className="overall-grid" style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
-          gap: '24px', 
-          marginBottom: '40px' 
+        <div className="overall-grid" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '24px',
+          marginBottom: '40px'
         }}>
           {/* Attendance Card */}
           <div className="overall-card analytics-card-premium" style={{
@@ -3813,7 +3939,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
               </div>
               <span className="card-type-tag">Performance Hub</span>
             </div>
-            
+
             <div className="comparison-display">
               <div className="user-score-box">
                 <div className="score-header">
@@ -3823,7 +3949,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
                 <h3>{format2(summaryData.totalProjectedScore)}</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="score-percent">{(summaryData.maxPossibleScore > 0 ? (summaryData.totalProjectedScore / summaryData.maxPossibleScore) * 100 : 0).toFixed(1)}% Current</span>
+                    <span className="score-percent">{(summaryData.maxPossibleScore > 0 ? (summaryData.totalProjectedScore / summaryData.maxPossibleScore) * 100 : 0).toFixed(2)}% Current</span>
                     <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#6366f1', background: '#eef2ff', padding: '2px 6px', borderRadius: '4px' }}>{calculateCGPA(summaryData.totalProjectedScore, summaryData.items.length).toFixed(3)}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', paddingLeft: '2px', borderLeft: '2px solid #e0e7ff' }}>
@@ -3837,9 +3963,9 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
                   </div>
                 </div>
               </div>
-              
+
               <div className="vs-badge">VS</div>
-              
+
               <div className="user-score-box friend">
                 <div className="score-header">
                   <div className="avatar-mini" style={{ background: '#fffbeb', color: '#f59e0b' }}>D</div>
@@ -3848,8 +3974,8 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
                 <h3>{format2(summaryData.totalDhruvScore)}</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexDirection: 'row-reverse' }}>
-                     <span className="score-percent">{(summaryData.maxPossibleScore > 0 ? (summaryData.totalDhruvScore / summaryData.maxPossibleScore) * 100 : 0).toFixed(1)}% Current</span>
-                     <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#f59e0b', background: '#fffbeb', padding: '2px 6px', borderRadius: '4px' }}>{calculateCGPA(summaryData.totalDhruvScore, summaryData.items.length).toFixed(3)}</span>
+                    <span className="score-percent">{(summaryData.maxPossibleScore > 0 ? (summaryData.totalDhruvScore / summaryData.maxPossibleScore) * 100 : 0).toFixed(2)}% Current</span>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#f59e0b', background: '#fffbeb', padding: '2px 6px', borderRadius: '4px' }}>{calculateCGPA(summaryData.totalDhruvScore, summaryData.items.length).toFixed(3)}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', paddingRight: '2px', borderRight: '2px solid #fef3c7', alignItems: 'flex-end' }}>
                     <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>End-Sem Prediction</span>
@@ -3986,15 +4112,15 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
                     <span className="lecture-count-pill" style={{ background: '#eff6ff', color: '#1e40af', border: '1px solid #dbeafe', padding: '4px 12px', fontWeight: 700 }}>{item.class.total + item.lab.total} Total Lectures</span>
                   </div>
                 </div>
-                
+
                 <div className="header-performance-stats" style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                   <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '2px' }}>Aggregated Score</div>
-                      <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#1e293b' }}>
-                        {format2(item.score)} <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>/ 100</span>
-                      </div>
-                   </div>
-                   <div className={`leader-badge ${item.score >= item.dhruvScore ? 'me' : 'dhruv'}`} style={{
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '2px' }}>Aggregated Score</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#1e293b' }}>
+                      {format2(item.score)} <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>/ 100</span>
+                    </div>
+                  </div>
+                  <div className={`leader-badge ${item.score >= item.dhruvScore ? 'me' : 'dhruv'}`} style={{
                     padding: '12px 20px',
                     borderRadius: '16px',
                     background: item.score >= item.dhruvScore ? 'linear-gradient(135deg, #f0fdf4, #dcfce7)' : 'linear-gradient(135deg, #fffbeb, #fef3c7)',
@@ -4024,7 +4150,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
                         <span style={{ fontSize: '0.85rem', fontWeight: 800, padding: '4px 10px', background: '#fffbeb', color: '#f59e0b', borderRadius: '8px' }}>D: {format2(item.dhruvAttWeighted)}%</span>
                       </div>
                     </div>
-                    
+
                     <div className="performance-row-detailed">
                       <div className="pr-label">
                         <span className="pr-type">Theory Classes</span>
@@ -4100,16 +4226,16 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
 
                     {item.studyGap > 0 && (
                       <div style={{ marginTop: '20px', padding: '12px 16px', borderRadius: '12px', background: '#fff1f2', border: '1px solid #ffe4e6', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                         <Clock size={18} style={{ color: '#f43f5e' }} />
-                         <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#9f1239' }}>{item.studyGap} Lectures still pending study across both modes.</span>
+                        <Clock size={18} style={{ color: '#f43f5e' }} />
+                        <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#9f1239' }}>{item.studyGap} Lectures still pending study across both modes.</span>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="score-breakdown-grid-detailed" style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                <div className="score-breakdown-grid-detailed" style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
                   gap: '20px',
                   padding: '24px',
                   background: '#f8fafc',
@@ -4135,27 +4261,27 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
                             <span style={{ marginLeft: 'auto', fontSize: '0.6rem', fontWeight: 800, color: '#8b5cf6', background: '#ede9fe', padding: '2px 7px', borderRadius: '100px', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>70% / 50%</span>
                           )}
                         </div>
-                        
+
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
                             <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#94a3b8' }}>Score</span>
                             <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#1e293b' }}>{format2(item.breakdown[comp.key])}</span>
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                             <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#94a3b8' }}>Dhruv</span>
-                             <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#f59e0b' }}>{format2(item.dhruvBreakdown[comp.key])}</span>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#94a3b8' }}>Dhruv</span>
+                            <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#f59e0b' }}>{format2(item.dhruvBreakdown[comp.key])}</span>
                           </div>
                         </div>
 
                         <div className="mini-comparison-progress" style={{ height: '6px', background: '#f1f5f9', borderRadius: '100px', overflow: 'hidden', position: 'relative' }}>
-                           <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', background: comp.color, width: `${(item.breakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`, borderRadius: '100px', opacity: 0.8, zIndex: 2 }}></div>
-                           <div style={{ position: 'absolute', bottom: 0, left: 0, height: '2px', background: '#f59e0b', width: `${(item.dhruvBreakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`, zIndex: 3 }}></div>
+                          <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', background: comp.color, width: `${(item.breakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`, borderRadius: '100px', opacity: 0.8, zIndex: 2 }}></div>
+                          <div style={{ position: 'absolute', bottom: 0, left: 0, height: '2px', background: '#f59e0b', width: `${(item.dhruvBreakdown[comp.key] / (item.weights[comp.weightKey] * 100)) * 100}%`, zIndex: 3 }}></div>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '0.65rem', fontWeight: 700, color: '#94a3b8' }}>
-                           <span>Max: {format2(item.weights[comp.weightKey] * 100)}</span>
-                           <span style={{ color: item.breakdown[comp.key] >= item.dhruvBreakdown[comp.key] ? '#10b981' : '#f59e0b' }}>
-                             {item.breakdown[comp.key] >= item.dhruvBreakdown[comp.key] ? 'Ahead' : 'Behind'}
-                           </span>
+                          <span>Max: {format2(item.weights[comp.weightKey] * 100)}</span>
+                          <span style={{ color: item.breakdown[comp.key] >= item.dhruvBreakdown[comp.key] ? '#10b981' : '#f59e0b' }}>
+                            {item.breakdown[comp.key] >= item.dhruvBreakdown[comp.key] ? 'Ahead' : 'Behind'}
+                          </span>
                         </div>
                       </div>
                     )
@@ -4192,7 +4318,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
             </h3>
             <div style={{ display: 'flex', gap: '12px' }}>
               <div style={{ padding: '8px 16px', borderRadius: '100px', background: '#eff6ff', color: '#3b82f6', fontSize: '0.85rem', fontWeight: 700, border: '1px solid #dbeafe' }}>
-                {tasks.filter(t => t.type === 'lecture' && !t.completed).length} Total Pending
+                {tasks.filter(t => !t.completed).length} Total Pending
               </div>
             </div>
           </div>
@@ -4202,7 +4328,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '24px' }}>
               {subjects.map(subjectName => {
                 const pendingTasks = tasks
-                  .filter(t => t.subjectName === subjectName && t.type === 'lecture' && !t.completed)
+                  .filter(t => t.subjectName === subjectName && !t.completed)
                   .sort((a, b) => new Date(a.date || a.createdAt) - new Date(b.date || b.createdAt));
 
                 if (pendingTasks.length === 0) return null;
@@ -4245,10 +4371,27 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
 
                     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {pendingTasks.map(task => {
-                        // Lecture specific styling
-                        const Icon = BookOpen;
-                        const colorClass = '#3b82f6';
-                        const bgClass = '#eff6ff';
+                        let Icon = BookOpen;
+                        let colorClass = '#3b82f6';
+                        let bgClass = '#eff6ff';
+
+                        if (task.type === 'assignment') {
+                          Icon = FileText;
+                          colorClass = '#f43f5e';
+                          bgClass = '#fff1f2';
+                        } else if (task.type === 'quiz') {
+                          Icon = BrainCircuit;
+                          colorClass = '#8b5cf6';
+                          bgClass = '#f5f3ff';
+                        } else if (task.type === 'project') {
+                          Icon = Rocket;
+                          colorClass = '#10b981';
+                          bgClass = '#ecfdf5';
+                        } else if (task.type === 'contest' || task.type === 'midSem' || task.type === 'endSem') {
+                          Icon = GraduationCap;
+                          colorClass = '#6366f1';
+                          bgClass = '#f5f7ff';
+                        }
 
                         return (
                           <div key={task.id} style={{
@@ -4256,21 +4399,22 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
                             alignItems: 'center',
                             gap: '12px',
                             padding: '12px',
-                            background: 'rgba(255,255,255,0.6)',
+                            background: task.hasDoubt ? 'rgba(254, 242, 242, 0.9)' : 'rgba(255,255,255,0.6)',
                             borderRadius: '16px',
-                            border: '1px solid rgba(255,255,255,0.8)',
+                            border: task.hasDoubt ? '1px solid #fecaca' : '1px solid rgba(255,255,255,0.8)',
                             transition: 'all 0.2s ease',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            position: 'relative'
                           }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.transform = 'translateY(-2px)';
                               e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
-                              e.currentTarget.style.background = 'white';
+                              e.currentTarget.style.background = task.hasDoubt ? '#fff1f2' : 'white';
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.transform = 'none';
                               e.currentTarget.style.boxShadow = 'none';
-                              e.currentTarget.style.background = 'rgba(255,255,255,0.6)';
+                              e.currentTarget.style.background = task.hasDoubt ? 'rgba(254, 242, 242, 0.9)' : 'rgba(255,255,255,0.6)';
                             }}
                           >
                             <div style={{
@@ -4291,7 +4435,7 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.name}</span>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: colorClass, textTransform: 'capitalize' }}>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: colorClass, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
                                   {task.type === 'midSem' ? 'Mid Sem' : task.type === 'endSem' ? 'End Sem' : task.type}
                                 </span>
                                 {task.date && (
@@ -4301,6 +4445,11 @@ function SummaryView({ tasks, subjects, threshold, mode = 'overview', onUpdate }
                                       {formatDate(task.date)}
                                     </span>
                                   </>
+                                )}
+                                {task.hasDoubt && (
+                                  <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#ef4444', background: '#fee2e2', padding: '1px 6px', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                                    DOUBT
+                                  </span>
                                 )}
                               </div>
                             </div>
@@ -4560,7 +4709,7 @@ function SafeZoneView({ tasks, subjects, threshold, setThreshold }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '24px' }}>
         {Object.entries(subjectGroups).map(([name, item]) => {
-          const weighted = (item.class.attendancePercent * 0.5 + item.lab.attendancePercent * 0.5).toFixed(1);
+          const weighted = (item.class.attendancePercent * 0.5 + item.lab.attendancePercent * 0.5).toFixed(2);
           const isSafe = parseFloat(weighted) >= target;
 
           // Analyze Components
@@ -4964,8 +5113,8 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
 
     return {
       total: filteredTotal,
-      attendance: globalTotal > 0 ? Math.round((globalPresent / globalTotal) * 100) : 0,
-      completion: filteredTotal > 0 ? Math.round((filteredCompleted / filteredTotal) * 100) : 0
+      attendance: globalTotal > 0 ? ((globalPresent / globalTotal) * 100).toFixed(2) : "0.00",
+      completion: filteredTotal > 0 ? ((filteredCompleted / filteredTotal) * 100).toFixed(2) : "0.00"
     };
   }, [allLectures, tasks]);
 
@@ -5086,10 +5235,10 @@ function AllLecturesView({ tasks, onUpdate, onDelete, onEdit }) {
             {/* Subject Filters */}
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: '8px' }}>Subjects:</span>
-              <div style={{ 
-                display: 'flex', 
-                gap: '8px', 
-                overflowX: 'auto', 
+              <div style={{
+                display: 'flex',
+                gap: '8px',
+                overflowX: 'auto',
                 paddingBottom: '4px',
                 msOverflowStyle: 'none',
                 scrollbarWidth: 'none',
@@ -5288,7 +5437,7 @@ function ExamCountdown({ now: externalNow }) {
           type: 'exam'
         }
       ].filter(m => m.dateObj > now)
-       .sort((a, b) => a.dateObj - b.dateObj);
+        .sort((a, b) => a.dateObj - b.dateObj);
 
       if (milestones.length === 0) {
         return { days: 0, hours: 0, minutes: 0, seconds: 0, label: '', type: 'exam', expired: true };
