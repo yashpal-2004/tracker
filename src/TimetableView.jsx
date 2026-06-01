@@ -59,6 +59,52 @@ export const SCHEDULE_DATA = [
     }
 ];
 
+export const SEM5_SCHEDULE_DATA = [
+    {
+        day: 'Mon',
+        items: [
+            { name: 'Computer Networks Lec', time: '9:00 AM - 10:20 AM', room: 'A402', color: 'blue', start: 9 * 60, duration: 80 },
+            { name: 'DBMS Lab', time: '10:30 AM - 11:50 AM', room: 'Lab 3: C101', color: 'green', start: 10 * 60 + 30, duration: 80 },
+            { name: 'Lunch', time: '1:00 PM - 2:00 PM', color: 'yellow', start: 13 * 60, duration: 60 },
+            { name: 'Operating Systems Lec', time: '2:00 PM - 3:20 PM', room: 'C203', color: 'pink', start: 14 * 60, duration: 80 }
+        ]
+    },
+    {
+        day: 'Tue',
+        items: [
+            { name: 'DBMS Lec', time: '9:00 AM - 10:20 AM', room: 'C203', color: 'green', start: 9 * 60, duration: 80 },
+            { name: 'DAA Lecture', time: '10:30 AM - 11:50 AM', room: 'C302', color: 'orange', start: 10 * 60 + 30, duration: 80 },
+            { name: 'Lunch', time: '1:00 PM - 2:00 PM', color: 'yellow', start: 13 * 60, duration: 60 },
+            { name: 'Computer Networks Lab', time: '2:00 PM - 3:20 PM', room: 'Lab 5: A503', color: 'blue', start: 14 * 60, duration: 80 }
+        ]
+    },
+    {
+        day: 'Wed',
+        items: [
+            { name: 'Computer Networks Lec', time: '9:00 AM - 10:20 AM', room: 'A402', color: 'blue', start: 9 * 60, duration: 80 },
+            { name: 'Operating Systems Lab', time: '10:30 AM - 11:50 AM', room: 'Lab 4: C102', color: 'pink', start: 10 * 60 + 30, duration: 80 },
+            { name: 'Lunch', time: '12:00 PM - 1:00 PM', color: 'yellow', start: 12 * 60, duration: 60 },
+            { name: 'DAA Lecture', time: '1:30 PM - 2:50 PM', room: 'C302', color: 'orange', start: 13 * 60 + 30, duration: 80 }
+        ]
+    },
+    {
+        day: 'Thurs',
+        items: [
+            { name: 'DBMS Lec', time: '9:00 AM - 10:20 AM', room: 'C203', color: 'green', start: 9 * 60, duration: 80 },
+            { name: 'Operating Systems Lec', time: '10:30 AM - 11:50 AM', room: 'C203', color: 'pink', start: 10 * 60 + 30, duration: 80 },
+            { name: 'Lunch', time: '12:00 PM - 1:00 PM', color: 'yellow', start: 12 * 60, duration: 60 },
+            { name: 'DAA Lab', time: '1:00 PM - 2:20 PM', room: 'Lab 6: A504', color: 'orange', start: 13 * 60, duration: 80 }
+        ]
+    },
+    {
+        day: 'Fri',
+        items: [
+            { name: 'Contest', time: '9:00 AM - 12:00 PM', color: 'white', start: 9 * 60, duration: 180 },
+            { name: 'Lunch', time: '12:00 PM - 1:00 PM', color: 'yellow', start: 12 * 60, duration: 60 }
+        ]
+    }
+];
+
 export const COLORS = {
     green: { bg: '#d1fae5', border: '#10b981', text: '#064e3b' },
     orange: { bg: '#ffedd5', border: '#f97316', text: '#7c2d12' },
@@ -75,7 +121,8 @@ const TIME_SLOTS = [
     '4:00', '4:30', '5:00', '5:30', '6:00', '6:30'
 ];
 
-function TimetableView() {
+function TimetableView({ activeSemester = '4' }) {
+    const activeSchedule = activeSemester === '5' ? SEM5_SCHEDULE_DATA : SCHEDULE_DATA;
     // Total mins from 9:00 to 18:30 (9.5 hours = 570 mins)
     const START_TIME = 9 * 60;
     const END_TIME = 18 * 60 + 30;
@@ -92,7 +139,7 @@ function TimetableView() {
 
     return (
         <div className="timetable-container glass">
-            <h2 className="timetable-title">Weekly Schedule</h2>
+            <h2 className="timetable-title">Weekly Schedule ({activeSemester === '5' ? 'Semester 5' : 'Semester 4'})</h2>
             <div className="timetable-wrapper">
                 <div className="timetable-header">
                     <div className="day-col-header">Day</div>
@@ -137,7 +184,7 @@ function TimetableView() {
                 </div>
 
                 <div className="timetable-body">
-                    {SCHEDULE_DATA.map((dayRow) => (
+                    {activeSchedule.map((dayRow) => (
                         <div key={dayRow.day} className="timetable-row">
                             <div className="day-col">{dayRow.day}</div>
 
@@ -163,7 +210,7 @@ function TimetableView() {
                                                 backgroundColor: color.bg,
                                                 borderLeft: `3px solid ${color.border}`,
                                                 color: color.text
-                                            }}
+                                             }}
                                         >
                                             <div className="event-name">{item.name}</div>
                                             <div className="event-meta">

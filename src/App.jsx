@@ -102,6 +102,11 @@ const DEFAULT_SUBJECTS = [
   "GenAI Class", "GenAI Lab", "SD Class", "SD Lab"
 ];
 
+const SEM5_SUBJECTS = [
+  "CN Class", "CN Lab", "DBMS Class", "DBMS Lab",
+  "OS Class", "OS Lab", "DAA Class", "DAA Lab"
+];
+
 const EXAM_DATES = {
   midSem: "2026-03-15",
   endSem: "2026-05-20"
@@ -134,11 +139,37 @@ const SUBJECT_THEMES = {
   "All Lectures": { primary: "#0f172a", glow: "rgba(15, 23, 42, 0.18)" },
   "Exam Schedule": { primary: "#ef4444", glow: "rgba(239, 68, 68, 0.18)" }
 };
+
+const SEM5_SUBJECT_THEMES = {
+  "CN Class": { primary: "#4c00ff", glow: "rgba(76, 0, 255, 0.18)" },
+  "CN Lab": { primary: "#3d00cc", glow: "rgba(61, 0, 204, 0.18)" },
+  "DBMS Class": { primary: "#00ae74", glow: "rgba(0, 174, 116, 0.18)" },
+  "DBMS Lab": { primary: "#008b5d", glow: "rgba(0, 139, 93, 0.18)" },
+  "OS Class": { primary: "#ff0084", glow: "rgba(255, 0, 132, 0.18)" },
+  "OS Lab": { primary: "#cc006a", glow: "rgba(204, 0, 106, 0.18)" },
+  "DAA Class": { primary: "#00aaff", glow: "rgba(0, 170, 255, 0.18)" },
+  "DAA Lab": { primary: "#0088cc", glow: "rgba(0, 136, 204, 0.18)" },
+  "Analytics": { primary: "#1e293b", glow: "rgba(30, 41, 59, 0.18)" },
+  "All Lectures": { primary: "#0f172a", glow: "rgba(15, 23, 42, 0.18)" },
+  "Exam Schedule": { primary: "#ef4444", glow: "rgba(239, 68, 68, 0.18)" }
+};
 function App() {
   const [tasks, setTasks] = useState([]);
+  const [activeSemester, setActiveSemester] = useState(() => {
+    return localStorage.getItem('active_semester') || '4';
+  });
+
+  const activeSubjects = useMemo(() => {
+    return activeSemester === '5' ? SEM5_SUBJECTS : DEFAULT_SUBJECTS;
+  }, [activeSemester]);
+
+  const activeSubjectThemes = useMemo(() => {
+    return activeSemester === '5' ? SEM5_SUBJECT_THEMES : SUBJECT_THEMES;
+  }, [activeSemester]);
+
   const [activeSubject, setActiveSubject] = useState(() => {
     const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-    if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep' || hash === 'Focus') return hash;
+    if (DEFAULT_SUBJECTS.includes(hash) || SEM5_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep' || hash === 'Focus') return hash;
     return localStorage.getItem('active_subject') || 'Home';
   });
 
@@ -157,13 +188,27 @@ function App() {
     return parseInt(localStorage.getItem('user_zoom_level')) || 100;
   });
 
+  const [autoLecturePaused, setAutoLecturePaused] = useState(() => {
+    return localStorage.getItem('auto_lecture_paused') === 'true';
+  });
+
   // Find user preferences task, if any, or use local state
   const userPrefs = useMemo(() => tasks.find(t => t.type === 'user_prefs'), [tasks]);
 
   useEffect(() => {
-    if (userPrefs && userPrefs.zoomLevel && userPrefs.zoomLevel !== zoomLevel) {
-      setZoomLevel(userPrefs.zoomLevel);
-      localStorage.setItem('user_zoom_level', userPrefs.zoomLevel);
+    if (userPrefs) {
+      if (userPrefs.zoomLevel && userPrefs.zoomLevel !== zoomLevel) {
+        setZoomLevel(userPrefs.zoomLevel);
+        localStorage.setItem('user_zoom_level', userPrefs.zoomLevel);
+      }
+      if (userPrefs.autoLecturePaused !== undefined && userPrefs.autoLecturePaused !== autoLecturePaused) {
+        setAutoLecturePaused(userPrefs.autoLecturePaused);
+        localStorage.setItem('auto_lecture_paused', userPrefs.autoLecturePaused);
+      }
+      if (userPrefs.activeSemester && userPrefs.activeSemester !== activeSemester) {
+        setActiveSemester(userPrefs.activeSemester);
+        localStorage.setItem('active_semester', userPrefs.activeSemester);
+      }
     }
   }, [userPrefs]);
 
@@ -190,6 +235,53 @@ function App() {
     }
   };
 
+  const handleAutoLecturePauseUpdate = async (paused) => {
+    setAutoLecturePaused(paused);
+    localStorage.setItem('auto_lecture_paused', paused);
+    if (userPrefs) {
+      await updateTask(userPrefs.id, { autoLecturePaused: paused });
+    } else {
+      try {
+        await addDoc(TASKS_COLLECTION, {
+          type: 'user_prefs',
+          autoLecturePaused: paused,
+          createdAt: Date.now()
+        });
+      } catch (e) {
+        console.error("Error creating user prefs: ", e);
+      }
+    }
+  };
+
+  const handleSemesterUpdate = async (sem) => {
+    setActiveSemester(sem);
+    localStorage.setItem('active_semester', sem);
+    setActiveSubject('Home');
+    if (userPrefs) {
+      await updateTask(userPrefs.id, { activeSemester: sem });
+    } else {
+      try {
+        await addDoc(TASKS_COLLECTION, {
+          type: 'user_prefs',
+          activeSemester: sem,
+          createdAt: Date.now()
+        });
+      } catch (e) {
+        console.error("Error creating user prefs: ", e);
+      }
+    }
+  };
+
+  const semesterTasks = useMemo(() => {
+    return tasks.filter(t => {
+      if (t.type === 'user_prefs') return true;
+      if (activeSemester === '4') {
+        return !t.semester || t.semester === '4' || t.semester === 'sem_4';
+      }
+      return t.semester === '5' || t.semester === 'sem_5';
+    });
+  }, [tasks, activeSemester]);
+
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000 * 60); // Update every minute
     return () => clearInterval(timer);
@@ -203,15 +295,15 @@ function App() {
 
   // Auto-create lectures based on timetable
   useEffect(() => {
-    if (loading || tasks.length === 0) return; // Wait for tasks to load
+    if (loading || semesterTasks.length === 0 || autoLecturePaused || activeSemester === '4') return; // Wait for tasks to load, if paused, or if semester 4 is selected (completed)
 
     const checkAndCreateLectures = async () => {
-      const pendingLectures = getPendingLectures(time, tasks);
+      const pendingLectures = getPendingLectures(time, semesterTasks, activeSemester);
 
       if (pendingLectures.length > 0) {
         for (const lecture of pendingLectures) {
           // Find the next lecture number for this subject
-          const subjectLectures = tasks.filter(
+          const subjectLectures = semesterTasks.filter(
             t => t.type === 'lecture' && t.subjectName === lecture.subject
           );
           const nextNumber = subjectLectures.length + 1;
@@ -229,6 +321,7 @@ function App() {
             notes: '',
             notionUrl: '',
             createdAt: Date.now(),
+            semester: activeSemester, // Track semester!
             autoCreated: true // Flag to indicate this was auto-created
           };
 
@@ -244,7 +337,7 @@ function App() {
     };
 
     checkAndCreateLectures();
-  }, [time, tasks, loading]); // Run every minute when time updates
+  }, [time, semesterTasks, loading, autoLecturePaused, activeSemester]); // Run every minute when time updates
 
 
   // Sync with Firestore
@@ -289,7 +382,7 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').replace(/%20/g, ' ');
-      if (DEFAULT_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep' || hash === 'Focus') setActiveSubject(hash);
+      if (DEFAULT_SUBJECTS.includes(hash) || SEM5_SUBJECTS.includes(hash) || hash === 'Home' || hash === 'Analytics' || hash === 'All Lectures' || hash === 'Exam Schedule' || hash === 'Activity Tracker' || hash === 'Timetable' || hash === 'Habits' || hash === 'Sleep' || hash === 'Focus') setActiveSubject(hash);
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -297,7 +390,8 @@ function App() {
 
   // Theme Management
   useEffect(() => {
-    const theme = SUBJECT_THEMES[activeSubject] || SUBJECT_THEMES["DM Class"];
+    const defaultThemeSubject = activeSemester === '5' ? "CN Class" : "DM Class";
+    const theme = activeSubjectThemes[activeSubject] || activeSubjectThemes[defaultThemeSubject];
     document.documentElement.style.setProperty('--primary', theme.primary);
     document.documentElement.style.setProperty('--primary-glow', theme.glow);
 
@@ -310,7 +404,7 @@ function App() {
     } else {
       bodyStyle.backgroundColor = '#f3f4f6';
     }
-  }, [activeSubject]);
+  }, [activeSubject, activeSubjectThemes, activeSemester]);
 
   const addTask = async (subjectName, type, data) => {
     // Auto-detect subject for lectures based on timetable mapping
@@ -320,7 +414,7 @@ function App() {
       // Dynamically import the mapping to check if this lecture should go to a different subject
       try {
         const { getSubjectFromLecture } = await import('./timetableMapping');
-        const detectedSubject = getSubjectFromLecture(data.name);
+        const detectedSubject = getSubjectFromLecture(data.name, activeSemester);
         if (detectedSubject) {
           finalSubject = detectedSubject;
         }
@@ -338,6 +432,7 @@ function App() {
       present: type === 'lecture',
       important: type !== 'lecture',
       createdAt: Date.now(),
+      semester: activeSemester, // Track semester!
       ...data
     };
     try {
@@ -375,15 +470,21 @@ function App() {
         // If this is an auto-created lecture, mark it as manually deleted
         // so it won't be auto-recreated
         if (task && task.type === 'lecture' && task.autoCreated) {
-          const deletedKey = generateLectureId(task.subjectName, task.name, task.date);
-          const deletedLectures = JSON.parse(localStorage.getItem('deleted_lectures') || '{}');
-          deletedLectures[deletedKey] = {
-            name: task.name,
-            subject: task.subjectName,
-            date: task.date,
-            deletedAt: Date.now()
-          };
-          localStorage.setItem('deleted_lectures', JSON.stringify(deletedLectures));
+          const subject = task.subjectName || task.subject || '';
+          const name = task.name || '';
+          const date = task.date || '';
+
+          if (subject && name && date) {
+            const deletedKey = generateLectureId(subject, name, date);
+            const deletedLectures = JSON.parse(localStorage.getItem('deleted_lectures') || '{}');
+            deletedLectures[deletedKey] = {
+              name,
+              subject,
+              date,
+              deletedAt: Date.now()
+            };
+            localStorage.setItem('deleted_lectures', JSON.stringify(deletedLectures));
+          }
         }
 
         await deleteDoc(doc(db, 'tasks', id));
@@ -401,7 +502,7 @@ function App() {
     const metaSubject = baseSubject === 'Home' || baseSubject === 'Analytics' ? activeSubject : baseSubject;
 
     // Find metadata for either exact subject or base subject
-    const candidates = tasks.filter(t => t.type === 'friend_meta' &&
+    const candidates = semesterTasks.filter(t => t.type === 'friend_meta' &&
       (t.subjectName === activeSubject || t.subject === activeSubject || t.subjectName === metaSubject || t.subject === metaSubject));
 
     if (candidates.length === 0) return null;
@@ -414,14 +515,14 @@ function App() {
       if (scoreA !== scoreB) return scoreB - scoreA;
       return (b.createdAt || 0) - (a.createdAt || 0);
     })[0];
-  }, [tasks, activeSubject]);
+  }, [semesterTasks, activeSubject]);
 
   const updateFriendMeta = async (updates) => {
     // Use base subject name for metadata to share across Class and Lab
     const baseSubject = activeSubject.replace(' Class', '').replace(' Lab', '');
     const metaSubject = baseSubject === 'Home' || baseSubject === 'Analytics' ? activeSubject : baseSubject;
 
-    const duplicates = tasks.filter(t => t.type === 'friend_meta' &&
+    const duplicates = semesterTasks.filter(t => t.type === 'friend_meta' &&
       (t.subjectName === metaSubject || t.subject === metaSubject || t.subjectName === activeSubject || t.subject === activeSubject));
 
     if (duplicates.length > 0) {
@@ -442,8 +543,8 @@ function App() {
   }, [activeSubject, activeTopic]);
 
   const leadMsg = useMemo(() => {
-    // Derive unique base subject names from DEFAULT_SUBJECTS
-    const baseSubjects = [...new Set(DEFAULT_SUBJECTS.map(s => s.replace(' Class', '').replace(' Lab', '')))];
+    // Derive unique base subject names from activeSubjects
+    const baseSubjects = [...new Set(activeSubjects.map(s => s.replace(' Class', '').replace(' Lab', '')))];
     let myTotal = 0;
     let dhruvTotal = 0;
 
@@ -453,13 +554,13 @@ function App() {
       const labSubjectName = `${baseName} Lab`;
 
       const getSubStats = (subjectName) => {
-        const subTasks = tasks.filter(t => t.subjectName === subjectName);
+        const subTasks = semesterTasks.filter(t => t.subjectName === subjectName);
         const lects = subTasks.filter(t => t.type === 'lecture');
         const attCount = lects.filter(t => t.present !== false).length;
         const attPercent = lects.length > 0 ? attCount / lects.length : 0;
 
         // Dhruv attendance via friend_meta
-        const friendMeta = tasks
+        const friendMeta = semesterTasks
           .filter(t => t.type === 'friend_meta' && (t.subjectName === subjectName || t.subject === subjectName))
           .sort((a, b) => {
             const aHas = a.attendanceOffset !== undefined;
@@ -508,7 +609,7 @@ function App() {
       });
 
       // Project — based on completion/marks or manual direct marks in friend_meta using the baseName
-      const meta = tasks.find(t => t.type === 'friend_meta' && (t.subjectName === baseName || t.subject === baseName));
+      const meta = semesterTasks.find(t => t.type === 'friend_meta' && (t.subjectName === baseName || t.subject === baseName));
 
       if (meta && meta.maxProjectMarks > 0) {
         const myM = meta.myProjectMarks || 0;
@@ -535,7 +636,7 @@ function App() {
     });
 
     // Also compute without-assignment diff (subtract fixed assignment contributions)
-    const assignmentBaseSubjects = [...new Set(DEFAULT_SUBJECTS.map(s => s.replace(' Class', '').replace(' Lab', '')))];
+    const assignmentBaseSubjects = [...new Set(activeSubjects.map(s => s.replace(' Class', '').replace(' Lab', '')))];
     let myAssignTotal = 0;
     let dhruvAssignTotal = 0;
     assignmentBaseSubjects.forEach(baseName => {
@@ -558,19 +659,21 @@ function App() {
       textWith: fmt(diffWith),
       textWithout: fmt(diffWithout)
     };
-  }, [tasks]);
+  }, [semesterTasks, activeSubjects, activeSemester]);
 
   const currentTasks = useMemo(() => {
-    return tasks.filter(t => t.subjectName === activeSubject && t.type !== 'friend_meta');
-  }, [tasks, activeSubject]);
+    return semesterTasks.filter(t => t.subjectName === activeSubject && t.type !== 'friend_meta');
+  }, [semesterTasks, activeSubject]);
 
   return (
     <div className="app-layout">
       <Sidebar
-        subjects={DEFAULT_SUBJECTS}
+        subjects={activeSubjects}
         activeSubject={activeSubject}
         onSelect={setActiveSubject}
         syncStatus={syncStatus}
+        activeSemester={activeSemester}
+        onSemesterChange={handleSemesterUpdate}
       />
       <main className="main-content">
         <BookmarkBar
@@ -610,27 +713,33 @@ function App() {
         </header>
 
         {activeSubject === 'Home' ? (
-          <HomeDashboard tasks={tasks} todayStr={todayStr} />
+          <HomeDashboard
+            tasks={semesterTasks}
+            todayStr={todayStr}
+            autoLecturePaused={autoLecturePaused}
+            onToggleAutoLecturePause={handleAutoLecturePauseUpdate}
+            activeSemester={activeSemester}
+          />
         ) : activeSubject === 'Marks Overview' ? (
-          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="overview" onUpdate={updateTask} />
+          <SummaryView tasks={semesterTasks} subjects={activeSubjects} threshold={attendanceThreshold} mode="overview" onUpdate={updateTask} />
         ) : activeSubject === 'Detailed Analysis' ? (
-          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="detailed" onUpdate={updateTask} />
+          <SummaryView tasks={semesterTasks} subjects={activeSubjects} threshold={attendanceThreshold} mode="detailed" onUpdate={updateTask} />
         ) : activeSubject === 'Pending Work' ? (
-          <SummaryView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} mode="pending" onUpdate={updateTask} />
+          <SummaryView tasks={semesterTasks} subjects={activeSubjects} threshold={attendanceThreshold} mode="pending" onUpdate={updateTask} />
         ) : activeSubject === 'All Lectures' ? (
           <AllLecturesView
-            tasks={tasks}
+            tasks={semesterTasks}
             onUpdate={updateTask}
             onDelete={deleteTask}
             onEdit={setEditingTask}
             portalNode={portalElement}
           />
         ) : activeSubject === 'Activity Tracker' ? (
-          <ActivityView tasks={tasks} subjects={DEFAULT_SUBJECTS} />
+          <ActivityView tasks={semesterTasks} subjects={activeSubjects} />
         ) : activeSubject === 'Exam Schedule' ? (
-          <ScheduleView tasks={tasks} currentTime={time} />
+          <ScheduleView tasks={semesterTasks} currentTime={time} />
         ) : activeSubject === 'Timetable' ? (
-          <TimetableView />
+          <TimetableView activeSemester={activeSemester} />
         ) : activeSubject === 'Habits' ? (
           <SmartHabitTracker />
         ) : activeSubject === 'Sleep' ? (
@@ -638,7 +747,7 @@ function App() {
         ) : activeSubject === 'Focus' ? (
           <TimeTracker />
         ) : activeSubject === 'Safe Zone' ? (
-          <SafeZoneView tasks={tasks} subjects={DEFAULT_SUBJECTS} threshold={attendanceThreshold} setThreshold={setAttendanceThreshold} />
+          <SafeZoneView tasks={semesterTasks} subjects={activeSubjects} threshold={attendanceThreshold} setThreshold={setAttendanceThreshold} />
         ) : (
           <div className="sections-container">
             <div className="active-section-wrapper" key={`${activeSubject}-${activeTopic}`}>
@@ -809,7 +918,7 @@ function SubjectTabs({ activeTopic, onChange, activeSubject }) {
   );
 }
 
-function Sidebar({ subjects, activeSubject, onSelect, syncStatus }) {
+function Sidebar({ subjects, activeSubject, onSelect, syncStatus, activeSemester, onSemesterChange }) {
   return (
     <aside className="sidebar glass" style={{ position: 'relative' }}>
       <div className="sidebar-header">
@@ -818,6 +927,55 @@ function Sidebar({ subjects, activeSubject, onSelect, syncStatus }) {
           <h2 className="logo-text">Track<span>U</span></h2>
         </div>
       </div>
+      
+      {/* Semester Switcher */}
+      <div style={{ padding: '0 16px 16px 16px' }}>
+        <div style={{
+          display: 'flex',
+          background: 'rgba(0, 0, 0, 0.05)',
+          borderRadius: '8px',
+          padding: '4px',
+          gap: '4px'
+        }}>
+          <button
+            onClick={() => onSemesterChange('4')}
+            style={{
+              flex: 1,
+              border: 'none',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              fontSize: '0.75rem',
+              fontWeight: activeSemester === '4' ? 700 : 500,
+              backgroundColor: activeSemester === '4' ? 'var(--primary)' : 'transparent',
+              color: activeSemester === '4' ? 'white' : '#64748b',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: activeSemester === '4' ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none'
+            }}
+          >
+            Sem 4
+          </button>
+          <button
+            onClick={() => onSemesterChange('5')}
+            style={{
+              flex: 1,
+              border: 'none',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              fontSize: '0.75rem',
+              fontWeight: activeSemester === '5' ? 700 : 500,
+              backgroundColor: activeSemester === '5' ? 'var(--primary)' : 'transparent',
+              color: activeSemester === '5' ? 'white' : '#64748b',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: activeSemester === '5' ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none'
+            }}
+          >
+            Sem 5
+          </button>
+        </div>
+      </div>
+
       <nav className="subject-list">
         <button
           className={`subject-btn ${activeSubject === 'Home' ? 'active' : ''}`}
@@ -1735,10 +1893,10 @@ function TaskSection({ title, type, tasks, onAdd, onUpdate, onDelete, onEdit, ac
 // Helper function to get subject weightages and expected counts
 function getSubjectWeights(subjectName) {
   const name = subjectName.toLowerCase();
-  const isGenAI = name.includes('genai');
-  const isDM = name.includes('dm');
-  const isDVA = name.includes('dva');
-  const isSD = name.includes('sd');
+  const isGenAI = name.includes('genai') || name.includes('os');
+  const isDM = name.includes('dm') || name.includes('cn');
+  const isDVA = name.includes('dva') || name.includes('dbms');
+  const isSD = name.includes('sd') || name.includes('daa');
 
   let weights = {};
   let counts = { contest: 1, midSem: 1, endSem: 1, quiz: 1 };

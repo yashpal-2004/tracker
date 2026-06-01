@@ -1,4 +1,4 @@
-import { SCHEDULE_DATA } from './TimetableView';
+import { SCHEDULE_DATA, SEM5_SCHEDULE_DATA } from './TimetableView';
 import { getSubjectFromLecture } from './timetableMapping';
 
 /**
@@ -35,9 +35,18 @@ const getDayName = (index) => {
  * Get lectures that have ended but haven't been added yet
  * @param {Date} currentTime - Current time
  * @param {Array} existingTasks - All existing tasks from Firebase
+ * @param {String} activeSemester - Current semester ('4' or '5')
  * @returns {Array} - Array of lectures to auto-create
  */
-export const getPendingLectures = (currentTime = new Date(), existingTasks = []) => {
+export const getPendingLectures = (currentTime = new Date(), existingTasks = [], activeSemester = '4') => {
+    // Semester 5 classes begin on Aug 10, 2026
+    if (activeSemester === '5') {
+        const sem5StartDate = new Date('2026-08-10T00:00:00');
+        if (currentTime < sem5StartDate) {
+            return [];
+        }
+    }
+
     const dayIndex = getDayIndex(currentTime);
     const currentMinutes = getCurrentTimeInMinutes(currentTime);
     const todayStr = currentTime.toLocaleDateString('en-CA'); // YYYY-MM-DD format
@@ -62,7 +71,8 @@ export const getPendingLectures = (currentTime = new Date(), existingTasks = [])
     }
 
     const dayName = getDayName(dayIndex);
-    const todaySchedule = SCHEDULE_DATA.find(d => d.day === dayName);
+    const scheduleData = activeSemester === '5' ? SEM5_SCHEDULE_DATA : SCHEDULE_DATA;
+    const todaySchedule = scheduleData.find(d => d.day === dayName);
 
     if (!todaySchedule) {
         return [];
@@ -83,7 +93,7 @@ export const getPendingLectures = (currentTime = new Date(), existingTasks = [])
 
         // Check if lecture has ended
         if (currentMinutes >= lectureEndTime) {
-            const subject = getSubjectFromLecture(item.name);
+            const subject = getSubjectFromLecture(item.name, activeSemester);
 
             if (!subject) {
                 return;
@@ -94,7 +104,8 @@ export const getPendingLectures = (currentTime = new Date(), existingTasks = [])
                 task.type === 'lecture' &&
                 task.subjectName === subject &&
                 task.name === item.name &&
-                task.date === todayStr
+                task.date === todayStr &&
+                (task.semester === activeSemester || (!task.semester && activeSemester === '4'))
             );
 
             // Unique ID for this specific lecture instance
@@ -124,9 +135,18 @@ export const getPendingLectures = (currentTime = new Date(), existingTasks = [])
 /**
  * Get the next upcoming lecture
  * @param {Date} currentTime - Current time
+ * @param {String} activeSemester - Current semester ('4' or '5')
  * @returns {Object|null} - Next lecture info or null
  */
-export const getNextLecture = (currentTime = new Date()) => {
+export const getNextLecture = (currentTime = new Date(), activeSemester = '4') => {
+    // Semester 5 classes begin on Aug 10, 2026
+    if (activeSemester === '5') {
+        const sem5StartDate = new Date('2026-08-10T00:00:00');
+        if (currentTime < sem5StartDate) {
+            return null;
+        }
+    }
+
     const dayIndex = getDayIndex(currentTime);
     const currentMinutes = getCurrentTimeInMinutes(currentTime);
 
@@ -136,7 +156,8 @@ export const getNextLecture = (currentTime = new Date()) => {
     }
 
     const dayName = getDayName(dayIndex);
-    const todaySchedule = SCHEDULE_DATA.find(d => d.day === dayName);
+    const scheduleData = activeSemester === '5' ? SEM5_SCHEDULE_DATA : SCHEDULE_DATA;
+    const todaySchedule = scheduleData.find(d => d.day === dayName);
 
     if (!todaySchedule) {
         return null;
@@ -154,7 +175,7 @@ export const getNextLecture = (currentTime = new Date()) => {
         }
 
         if (currentMinutes < item.start) {
-            const subject = getSubjectFromLecture(item.name);
+            const subject = getSubjectFromLecture(item.name, activeSemester);
             return {
                 name: item.name,
                 subject: subject,
@@ -172,9 +193,18 @@ export const getNextLecture = (currentTime = new Date()) => {
 /**
  * Get currently ongoing lecture
  * @param {Date} currentTime - Current time
+ * @param {String} activeSemester - Current semester ('4' or '5')
  * @returns {Object|null} - Current lecture info or null
  */
-export const getCurrentLecture = (currentTime = new Date()) => {
+export const getCurrentLecture = (currentTime = new Date(), activeSemester = '4') => {
+    // Semester 5 classes begin on Aug 10, 2026
+    if (activeSemester === '5') {
+        const sem5StartDate = new Date('2026-08-10T00:00:00');
+        if (currentTime < sem5StartDate) {
+            return null;
+        }
+    }
+
     const dayIndex = getDayIndex(currentTime);
     const currentMinutes = getCurrentTimeInMinutes(currentTime);
 
@@ -183,7 +213,8 @@ export const getCurrentLecture = (currentTime = new Date()) => {
     }
 
     const dayName = getDayName(dayIndex);
-    const todaySchedule = SCHEDULE_DATA.find(d => d.day === dayName);
+    const scheduleData = activeSemester === '5' ? SEM5_SCHEDULE_DATA : SCHEDULE_DATA;
+    const todaySchedule = scheduleData.find(d => d.day === dayName);
 
     if (!todaySchedule) {
         return null;
@@ -202,7 +233,7 @@ export const getCurrentLecture = (currentTime = new Date()) => {
         const lectureEndTime = item.start + item.duration;
 
         if (currentMinutes >= item.start && currentMinutes < lectureEndTime) {
-            const subject = getSubjectFromLecture(item.name);
+            const subject = getSubjectFromLecture(item.name, activeSemester);
             return {
                 name: item.name,
                 subject: subject,

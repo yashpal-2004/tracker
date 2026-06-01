@@ -7,12 +7,14 @@ import {
     Zap,
     BookOpen,
     PlayCircle,
-    CheckCircle
+    CheckCircle,
+    Play,
+    Pause
 } from 'lucide-react';
 import './App.css';
 import { getCurrentLecture, getNextLecture, getPendingLectures } from './autoLectureCreator';
 
-const HomeDashboard = ({ tasks, todayStr }) => {
+const HomeDashboard = ({ tasks, todayStr, autoLecturePaused, onToggleAutoLecturePause, activeSemester = '4' }) => {
     const stats = useMemo(() => {
         const activeTasks = tasks.filter(t => t.type !== 'friend_meta');
 
@@ -257,7 +259,14 @@ const HomeDashboard = ({ tasks, todayStr }) => {
 
                     {/* Live Lecture Status Widget */}
                     <div style={{ display: 'flex', flex: 1 }}>
-                        <LiveLectureStatus tasks={tasks} style={{ width: '100%', display: 'flex', flexDirection: 'column', margin: 0 }} />
+                        <LiveLectureStatus
+                            tasks={tasks}
+                            autoLecturePaused={autoLecturePaused}
+                            onToggleAutoLecturePause={onToggleAutoLecturePause}
+                            todaySchedule={todaySchedule}
+                            activeSemester={activeSemester}
+                            style={{ width: '100%', display: 'flex', flexDirection: 'column', margin: 0 }}
+                        />
                     </div>
                 </div>
             </div>
@@ -266,7 +275,7 @@ const HomeDashboard = ({ tasks, todayStr }) => {
 };
 
 // Live Lecture Status Component
-const LiveLectureStatus = ({ tasks, style = {} }) => {
+const LiveLectureStatus = ({ tasks, autoLecturePaused, onToggleAutoLecturePause, todaySchedule = [], activeSemester = '4', style = {} }) => {
     const [currentTime, setCurrentTime] = React.useState(new Date());
 
     React.useEffect(() => {
@@ -274,9 +283,9 @@ const LiveLectureStatus = ({ tasks, style = {} }) => {
         return () => clearInterval(timer);
     }, []);
 
-    const currentLecture = useMemo(() => getCurrentLecture(currentTime), [currentTime]);
-    const nextLecture = useMemo(() => getNextLecture(currentTime), [currentTime]);
-    const pendingLectures = useMemo(() => getPendingLectures(currentTime, tasks), [currentTime, tasks]);
+    const currentLecture = useMemo(() => getCurrentLecture(currentTime, activeSemester), [currentTime, activeSemester]);
+    const nextLecture = useMemo(() => getNextLecture(currentTime, activeSemester), [currentTime, activeSemester]);
+    const pendingLectures = useMemo(() => getPendingLectures(currentTime, tasks, activeSemester), [currentTime, tasks, activeSemester]);
 
     const formatTimeRemaining = (minutes) => {
         if (minutes === undefined || minutes === null) return '';
@@ -301,8 +310,62 @@ const LiveLectureStatus = ({ tasks, style = {} }) => {
         return `${m}m ${sStr}s`;
     };
 
-    if (!currentLecture && !nextLecture && pendingLectures.length === 0) {
-        return null; // Don't show widget if no relevant info
+    const isBeforeSem5Start = useMemo(() => {
+        if (activeSemester !== '5') return false;
+        const sem5StartDate = new Date('2026-08-10T00:00:00');
+        return currentTime < sem5StartDate;
+    }, [currentTime, activeSemester]);
+
+    if (isBeforeSem5Start) {
+        const sem5StartDate = new Date('2026-08-10T00:00:00');
+        const diffTime = sem5StartDate - currentTime;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        return (
+            <section className="dashboard-section glass" style={{
+                padding: '20px',
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05))',
+                border: '1px solid rgba(99, 102, 241, 0.2)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                ...style
+            }}>
+                <div style={{ display: 'flex', alignItems: 'stretch', gap: '16px', flexWrap: 'wrap', flex: 1, minHeight: 0 }}>
+                    <div style={{
+                        flex: '1',
+                        minWidth: '280px',
+                        padding: '24px 16px',
+                        background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                        borderRadius: '12px',
+                        color: 'white',
+                        boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        textAlign: 'center'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <Clock size={20} />
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Semester 5 Countdown
+                            </span>
+                        </div>
+                        <div style={{ fontSize: '1.8rem', fontWeight: 800, marginBottom: '6px' }}>
+                            {diffDays > 0 ? `${diffDays} Days Left` : 'Classes Starting Today!'}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                            Classes begin on Monday, 10 Aug 2026
+                        </div>
+                    </div>
+                </div>
+            </section>
+        );
+    }
+
+    if (!currentLecture && !nextLecture && pendingLectures.length === 0 && todaySchedule.length === 0) {
+        return null; // Don't show widget if no classes today
     }
 
     return (
@@ -379,48 +442,97 @@ const LiveLectureStatus = ({ tasks, style = {} }) => {
                         flex: '1',
                         minWidth: '280px',
                         padding: '16px',
-                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                        background: autoLecturePaused 
+                            ? 'linear-gradient(135deg, #e2e8f0, #cbd5e1)'
+                            : 'linear-gradient(135deg, #f59e0b, #d97706)',
                         borderRadius: '12px',
-                        color: 'white',
-                        boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)',
+                        color: autoLecturePaused ? '#475569' : 'white',
+                        boxShadow: autoLecturePaused ? 'none' : '0 4px 12px rgba(245, 158, 11, 0.3)',
                         display: 'flex',
                         flexDirection: 'column',
-                        justifyContent: 'center'
+                        justifyContent: 'center',
+                        border: autoLecturePaused ? '1px solid #cbd5e1' : 'none'
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                            <CheckCircle size={20} fill="white" />
+                            {autoLecturePaused ? <Pause size={20} /> : <CheckCircle size={20} fill="white" />}
                             <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Auto-Creating
+                                {autoLecturePaused ? 'Auto-Creation Paused' : 'Auto-Creating'}
                             </span>
                         </div>
                         <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '4px' }}>
                             {pendingLectures.length} Lecture{pendingLectures.length > 1 ? 's' : ''} Pending
                         </div>
                         <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                            Will be added automatically
+                            {autoLecturePaused ? 'Resume to add them automatically' : 'Will be added automatically'}
                         </div>
                     </div>
                 )}
 
-                {/* Info Message */}
-                {!currentLecture && nextLecture && (
-                    <div style={{
-                        flex: '1',
-                        minWidth: '280px',
-                        padding: '16px',
-                        background: 'rgba(255, 255, 255, 0.5)',
-                        borderRadius: '12px',
-                        border: '1px dashed #cbd5e1',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center'
-                    }}>
-                        <div style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: '1.5' }}>
-                            <strong style={{ color: '#1e293b' }}>✨ Auto-Lecture Creator Active</strong><br />
-                            Lectures will be automatically added to their respective subjects when classes end.
+                {/* Info Message & Toggle Action */}
+                <div style={{
+                    flex: '1',
+                    minWidth: '280px',
+                    padding: '16px',
+                    background: 'rgba(255, 255, 255, 0.5)',
+                    borderRadius: '12px',
+                    border: '1px dashed #cbd5e1',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center'
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                        <div style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: '1.5', flex: 1 }}>
+                            <strong style={{ color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ 
+                                    width: '8px', 
+                                    height: '8px', 
+                                    borderRadius: '50%', 
+                                    background: activeSemester === '4' ? '#64748b' : (autoLecturePaused ? '#f59e0b' : '#10b981'),
+                                    display: 'inline-block'
+                                }}></span>
+                                {activeSemester === '4' ? 'Semester 4 Completed' : `Auto-Lecture Creator ${autoLecturePaused ? 'Paused' : 'Active'}`}
+                            </strong>
+                            <span style={{ display: 'block', marginTop: '4px', fontSize: '0.8rem' }}>
+                                {activeSemester === '4' 
+                                    ? 'Automatic lecture adding is permanently disabled for Semester 4.' 
+                                    : (autoLecturePaused 
+                                        ? 'Automatic lecture adding is suspended. Pending lectures will not be created.' 
+                                        : 'Lectures will be automatically added to their respective subjects when classes end.'
+                                    )
+                                }
+                            </span>
                         </div>
+                        {activeSemester !== '4' && (
+                            <button
+                                onClick={() => onToggleAutoLecturePause(!autoLecturePaused)}
+                                style={{
+                                    padding: '6px 12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid ' + (autoLecturePaused ? '#10b981' : '#cbd5e1'),
+                                    backgroundColor: autoLecturePaused ? '#10b981' : '#f8fafc',
+                                    color: autoLecturePaused ? 'white' : '#475569',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    transition: 'all 0.2s ease',
+                                    boxShadow: autoLecturePaused ? '0 2px 4px rgba(16, 185, 129, 0.2)' : 'none'
+                                }}
+                                onMouseOver={(e) => {
+                                    e.currentTarget.style.backgroundColor = autoLecturePaused ? '#059669' : '#e2e8f0';
+                                }}
+                                onMouseOut={(e) => {
+                                    e.currentTarget.style.backgroundColor = autoLecturePaused ? '#10b981' : '#f8fafc';
+                                }}
+                            >
+                                {autoLecturePaused ? <Play size={12} fill="white" /> : <Pause size={12} fill="#475569" />}
+                                {autoLecturePaused ? 'Resume' : 'Pause'}
+                            </button>
+                        )}
                     </div>
-                )}
+                </div>
             </div>
         </section>
     );
