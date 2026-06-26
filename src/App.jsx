@@ -18,9 +18,7 @@ import './App.css';
 import './CombinedLayouts.css';
 import TimetableView from './TimetableView';
 import HomeDashboard from './HomeDashboard';
-import SmartHabitTracker from './SmartHabitTracker';
-import SleepTracker from './SleepTracker';
-import TimeTracker from './TimeTracker';
+
 import { db, TASKS_COLLECTION } from './firebase';
 import { getPendingLectures, getCurrentLecture, getNextLecture, generateLectureId } from './autoLectureCreator';
 import {
@@ -685,10 +683,10 @@ function App() {
         <header className="main-header unified-subject-header glass">
           <div className="header-left">
             <div className="title-group">
-              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject === 'Timetable' ? 'Weekly Class Schedule' : activeSubject === 'Habits' ? 'Smart Habit Tracker' : activeSubject === 'Sleep' ? 'Sleep & Recovery Tracker' : activeSubject === 'Focus' ? 'Flow State Hub' : activeSubject === 'Home' ? '' : activeSubject}</h1>
+              <h1>{activeSubject === 'Marks Overview' ? 'Global Performance Overview' : activeSubject === 'Detailed Analysis' ? 'Subject-wise Detailed Analysis' : activeSubject === 'Pending Work' ? 'Pending Lectures Queue' : activeSubject === 'All Lectures' ? 'Global Lecture View' : activeSubject === 'Exam Schedule' ? 'Academic Calendar' : activeSubject === 'Activity Tracker' ? 'Personal Activity Tracker' : activeSubject === 'Timetable' ? 'Weekly Class Schedule' : activeSubject === 'Home' ? '' : activeSubject}</h1>
             </div>
 
-            {!['Home', 'Marks Overview', 'Detailed Analysis', 'Pending Work', 'All Lectures', 'Activity Tracker', 'Exam Schedule', 'Timetable', 'Habits', 'Sleep', 'Focus', 'Safe Zone'].includes(activeSubject) && (
+            {!['Home', 'Marks Overview', 'Detailed Analysis', 'Pending Work', 'All Lectures', 'Activity Tracker', 'Exam Schedule', 'Timetable', 'Safe Zone'].includes(activeSubject) && (
               <SubjectTabs activeTopic={activeTopic} onChange={setActiveTopic} activeSubject={activeSubject} />
             )}
           </div>
@@ -706,7 +704,7 @@ function App() {
                 <span className="unit">%</span>
               </div>
             )}
-            {!['Home', 'Marks Overview', 'Detailed Analysis', 'Pending Work', 'All Lectures', 'Activity Tracker', 'Exam Schedule', 'Timetable', 'Habits', 'Sleep', 'Focus', 'Safe Zone'].includes(activeSubject) && (
+            {!['Home', 'Marks Overview', 'Detailed Analysis', 'Pending Work', 'All Lectures', 'Activity Tracker', 'Exam Schedule', 'Timetable', 'Safe Zone'].includes(activeSubject) && (
               <div id="section-stats-portal" ref={node => { if (node && portalElement !== node) setPortalElement(node); }}></div>
             )}
           </div>
@@ -740,12 +738,6 @@ function App() {
           <ScheduleView tasks={semesterTasks} currentTime={time} />
         ) : activeSubject === 'Timetable' ? (
           <TimetableView activeSemester={activeSemester} />
-        ) : activeSubject === 'Habits' ? (
-          <SmartHabitTracker />
-        ) : activeSubject === 'Sleep' ? (
-          <SleepTracker />
-        ) : activeSubject === 'Focus' ? (
-          <TimeTracker />
         ) : activeSubject === 'Safe Zone' ? (
           <SafeZoneView tasks={semesterTasks} subjects={activeSubjects} threshold={attendanceThreshold} setThreshold={setAttendanceThreshold} />
         ) : (
@@ -1099,38 +1091,6 @@ function BookmarkBar({ activeSubject, onSelect, leadData, time }) {
           </div>
         </div>
 
-        <div className="nav-divider-vertical"></div>
-
-        {/* Group 3: Life & Wellness */}
-        <div className="nav-group-wrapper">
-          <span className="group-label">Life</span>
-          <div className="nav-group section-wellness">
-            <button
-              className={`nav-btn ${activeSubject === 'Focus' ? 'active' : ''}`}
-              onClick={() => onSelect('Focus')}
-              title="Flow State Hub"
-            >
-              <Timer size={16} />
-              <span>Flow</span>
-            </button>
-            <button
-              className={`nav-btn ${activeSubject === 'Habits' ? 'active' : ''}`}
-              onClick={() => onSelect('Habits')}
-              title="Smart Habit Tracker"
-            >
-              <Zap size={16} />
-              <span>Habits</span>
-            </button>
-            <button
-              className={`nav-btn ${activeSubject === 'Sleep' ? 'active' : ''}`}
-              onClick={() => onSelect('Sleep')}
-              title="Sleep Tracker"
-            >
-              <Moon size={16} />
-              <span>Sleep</span>
-            </button>
-          </div>
-        </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', paddingLeft: '16px' }}>
           <ExamCountdown />
@@ -1186,6 +1146,26 @@ function BookmarkBar({ activeSubject, onSelect, leadData, time }) {
             <span>Notion</span>
           </a>
           <a
+            href="https://yashpal-2004.github.io/5th_Sem_Notes/index.html"
+            target="_blank"
+            rel="noreferrer"
+            className="bookmark-item premium-link"
+            title="5th Sem Notes"
+          >
+            <div className="link-icon-wrapper"><BookOpen size={14} /></div>
+            <span>5th Sem Notes</span>
+          </a>
+          <a
+            href="https://yashpal-2004.github.io/A2Z_DSA/"
+            target="_blank"
+            rel="noreferrer"
+            className="bookmark-item premium-link"
+            title="A2Z DSA"
+          >
+            <div className="link-icon-wrapper"><Layers size={14} /></div>
+            <span>A2Z DSA</span>
+          </a>
+          <a
             href="https://dsa-eight-delta.vercel.app/"
             target="_blank"
             rel="noreferrer"
@@ -1194,6 +1174,16 @@ function BookmarkBar({ activeSubject, onSelect, leadData, time }) {
           >
             <div className="link-icon-wrapper"><TrendingUp size={14} /></div>
             <span>DSA Tracker</span>
+          </a>
+          <a
+            href="https://portfoliobyjs.vercel.app/"
+            target="_blank"
+            rel="noreferrer"
+            className="bookmark-item premium-link"
+            title="Portfolio"
+          >
+            <div className="link-icon-wrapper"><User size={14} /></div>
+            <span>Portfolio</span>
           </a>
           <a
             href="https://github.com/yashpal-2004"
