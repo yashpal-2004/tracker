@@ -11,6 +11,16 @@ import {
 import './App.css';
 import { getCurrentLecture, getNextLecture } from './autoLectureCreator';
 import { getSubjectFromLecture } from './timetableMapping';
+import { isAttendanceRecorded } from './attendance';
+
+const readDailyAttendanceOverrides = () => {
+    try {
+        const value = JSON.parse(localStorage.getItem('daily_lecture_attendance') || '{}');
+        return value && typeof value === 'object' ? value : {};
+    } catch {
+        return {};
+    }
+};
 
 const HomeDashboard = ({ tasks, todayStr, activeSemester = '4', onAttendanceChange }) => {
     const [liveTime, setLiveTime] = React.useState(new Date());
@@ -32,16 +42,15 @@ const HomeDashboard = ({ tasks, todayStr, activeSemester = '4', onAttendanceChan
         const baselineAttended = baselineEntries.reduce((sum, entry) => sum + Number(entry.counts.attended || 0), 0);
         const cutoff = (attendanceMeta.find(meta => meta.myAttendanceAsOf)?.myAttendanceAsOf || '').slice(0, 10);
         const laterLectures = hasBaseline ? regularLectures.filter(lecture => lecture.date && lecture.date > cutoff) : [];
-        const totalLectures = hasBaseline ? baselineTotal + laterLectures.length : regularLectures.length;
+        const recordedLaterLectures = laterLectures.filter(isAttendanceRecorded);
+        const recordedLectures = regularLectures.filter(isAttendanceRecorded);
+        const totalLectures = hasBaseline ? baselineTotal + recordedLaterLectures.length : recordedLectures.length;
         const presentLectures = hasBaseline
-            ? baselineAttended + laterLectures.filter(lecture => lecture.present !== false).length
-            : regularLectures.filter(t => t.present !== false).length;
+            ? baselineAttended + recordedLaterLectures.filter(lecture => lecture.present !== false).length
+            : recordedLectures.filter(t => t.present !== false).length;
         const attendancePct = totalLectures > 0 ? (presentLectures / totalLectures) * 100 : 0;
 
         // 2. Pending Logic
-        const completedLectures = regularLectures.filter(t => t.completed).length;
-        const pendingLectures = totalLectures - completedLectures;
-
         // 3. Heatmap Calculation (Last 14 days)
         const heatmapData = [];
         const data = {};
@@ -127,7 +136,6 @@ const HomeDashboard = ({ tasks, todayStr, activeSemester = '4', onAttendanceChan
             attendancePct: attendancePct.toFixed(2),
             presentLectures,
             totalLectures,
-            pendingLectures,
             heatmapData,
             activeDaysCount,
             totalCompletedInPeriod,
@@ -169,6 +177,16 @@ const HomeDashboard = ({ tasks, todayStr, activeSemester = '4', onAttendanceChan
     const allLecturesFinishedToday = todaySchedule.length === 0 && pastTodaySchedule.length > 0;
     const isPastLecturesExpanded = pastLectureView[todayStr] ?? allLecturesFinishedToday;
 
+    const getAttendanceState = (item, subjectName) => {
+        const overrideKey = `${activeSemester}|${todayStr}|${item.name}`;
+        const overrides = readDailyAttendanceOverrides();
+        if (Object.prototype.hasOwnProperty.call(overrides, overrideKey)) return overrides[overrideKey] === true;
+
+        const lectureTask = subjectName && tasks.find(task => task.type === 'lecture' && task.subjectName === subjectName && task.name === item.name && task.date === todayStr);
+        if (!lectureTask) return true;
+        return isAttendanceRecorded(lectureTask) ? lectureTask.present !== false : null;
+    };
+
     const currentLecture = useMemo(() => getCurrentLecture(liveTime, activeSemester), [liveTime, activeSemester]);
     const nextLecture = useMemo(() => getNextLecture(liveTime, activeSemester), [liveTime, activeSemester]);
     const formatCountdown = (minutes) => {
@@ -206,10 +224,7 @@ const HomeDashboard = ({ tasks, todayStr, activeSemester = '4', onAttendanceChan
                         <div className="today-list" style={{ flex: 1, overflowY: 'auto', maxHeight: '300px' }}>
                             {todaySchedule.length > 0 ? todaySchedule.map((item, i) => {
                                 const subjectName = getSubjectFromLecture(item.name, activeSemester);
-                                const lectureTask = subjectName && tasks.find(task => task.type === 'lecture' && task.subjectName === subjectName && task.name === item.name && task.date === todayStr);
-                                const overrideKey = `${activeSemester}|${todayStr}|${item.name}`;
-                                const attendanceOverrides = JSON.parse(localStorage.getItem('daily_lecture_attendance') || '{}');
-                                const isPresent = attendanceOverrides[overrideKey] ?? (lectureTask ? lectureTask.present !== false : true);
+                                const attendanceState = getAttendanceState(item, subjectName);
                                 return (
                                 <div key={i} className="today-item" style={{
                                     display: 'flex',
@@ -228,6 +243,7 @@ const HomeDashboard = ({ tasks, todayStr, activeSemester = '4', onAttendanceChan
                                         <div className="class-name" style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1e293b' }}>{item.name}</div>
                                         <div className="class-room" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
                                             {item.room}
+                                            {attendanceState === null && <strong style={{ marginLeft: '10px', color: '#64748b' }}>Not recorded</strong>}
                                             {currentLecture?.startTime === item.start && currentLecture.name === item.name && (
                                                 <strong style={{ marginLeft: '10px', color: '#059669' }}>
                                                     In progress · ends in {formatCountdown(currentLecture.minutesRemaining)}
@@ -241,22 +257,22 @@ const HomeDashboard = ({ tasks, todayStr, activeSemester = '4', onAttendanceChan
                                         </div>
                                     </div>
                                     {subjectName && onAttendanceChange && (
-                                        <div role="group" aria-label={`${item.name} attendance`} style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                        <div role="group" aria-label={`${item.name} attendance`} className="attendance-toggle-group">
                                             <button
                                                 type="button"
-                                                aria-pressed={isPresent}
+                                                className={`attendance-toggle present ${attendanceState === true ? 'selected' : ''}`}
+                                                aria-pressed={attendanceState === true}
                                                 onClick={() => onAttendanceChange(item, true)}
                                                 title={`Mark ${item.name} present`}
-                                                style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${isPresent ? '#16a34a' : '#cbd5e1'}`, background: isPresent ? '#dcfce7' : 'white', color: isPresent ? '#15803d' : '#64748b', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
                                             >
                                                 <Check size={14} /> Present
                                             </button>
                                             <button
                                                 type="button"
-                                                aria-pressed={!isPresent}
+                                                className={`attendance-toggle absent ${attendanceState === false ? 'selected' : ''}`}
+                                                aria-pressed={attendanceState === false}
                                                 onClick={() => onAttendanceChange(item, false)}
                                                 title={`Mark ${item.name} absent`}
-                                                style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${!isPresent ? '#dc2626' : '#cbd5e1'}`, background: !isPresent ? '#fee2e2' : 'white', color: !isPresent ? '#b91c1c' : '#64748b', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
                                             >
                                                 <X size={14} /> Absent
                                             </button>
@@ -286,20 +302,17 @@ const HomeDashboard = ({ tasks, todayStr, activeSemester = '4', onAttendanceChan
                                     <div className="past-lectures-list">
                                         {pastTodaySchedule.map((item, i) => {
                                             const subjectName = getSubjectFromLecture(item.name, activeSemester);
-                                            const lectureTask = tasks.find(task => task.type === 'lecture' && task.subjectName === subjectName && task.name === item.name && task.date === todayStr);
-                                            const overrideKey = `${activeSemester}|${todayStr}|${item.name}`;
-                                            const attendanceOverrides = JSON.parse(localStorage.getItem('daily_lecture_attendance') || '{}');
-                                            const isPresent = attendanceOverrides[overrideKey] ?? (lectureTask ? lectureTask.present !== false : true);
+                                            const attendanceState = getAttendanceState(item, subjectName);
                                             return (
                                                 <div key={`${item.name}-${i}`} className="today-item past-lecture-item" style={{ borderLeft: `4px solid ${COLORS[item.color]?.border || '#ccc'}`, background: `linear-gradient(to right, ${COLORS[item.color]?.bg || '#f8f9fa'}, rgba(255,255,255,0))` }}>
                                                     <div className="time-col"><span className="time-text">{item.time}</span></div>
                                                     <div className="info-col">
                                                         <div className="class-name">{item.name}</div>
-                                                        <div className="class-room">{item.room}</div>
+                                                        <div className="class-room">{item.room}{attendanceState === null && <strong style={{ marginLeft: '10px', color: '#64748b' }}>Not recorded</strong>}</div>
                                                     </div>
                                                     <div role="group" aria-label={`${item.name} attendance`} className="attendance-toggle-group">
-                                                        <button type="button" aria-pressed={isPresent} onClick={() => onAttendanceChange(item, true)} className={`attendance-toggle present ${isPresent ? 'selected' : ''}`}><Check size={14} /> Present</button>
-                                                        <button type="button" aria-pressed={!isPresent} onClick={() => onAttendanceChange(item, false)} className={`attendance-toggle absent ${!isPresent ? 'selected' : ''}`}><X size={14} /> Absent</button>
+                                                        <button type="button" aria-pressed={attendanceState === true} onClick={() => onAttendanceChange(item, true)} className={`attendance-toggle present ${attendanceState === true ? 'selected' : ''}`}><Check size={14} /> Present</button>
+                                                        <button type="button" aria-pressed={attendanceState === false} onClick={() => onAttendanceChange(item, false)} className={`attendance-toggle absent ${attendanceState === false ? 'selected' : ''}`}><X size={14} /> Absent</button>
                                                     </div>
                                                 </div>
                                             );

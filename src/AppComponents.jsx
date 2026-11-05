@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { getAttendanceStats } from './attendance';
+import { SEM5_ASSESSMENT_ROADMAP } from './semester5Assessments';
 import {
   BarChart as ReBarChart,
   Bar as ReBar,
@@ -428,7 +429,7 @@ export function BookmarkBar({ activeSubject, onSelect, leadData, homeSummary, ti
                 {zoomControlsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
               {zoomControlsOpen && (
-                <div className="zoom-nav-actions">
+                <div className="zoom-nav-actions" role="group" aria-label="Display zoom controls">
                   <button className="nav-btn" onClick={() => onZoomUpdate(Math.max(50, zoomLevel - 10))} title="Zoom out"><ZoomOut size={16} /><span>Out</span></button>
                   <button className="nav-btn" onClick={() => onZoomUpdate(100)} title="Reset zoom"><RotateCcw size={16} /><span>Reset</span></button>
                   <button className="nav-btn" onClick={() => onZoomUpdate(Math.min(150, zoomLevel + 10))} title="Zoom in"><ZoomIn size={16} /><span>In</span></button>
@@ -438,7 +439,6 @@ export function BookmarkBar({ activeSubject, onSelect, leadData, homeSummary, ti
           </div>
         </div>
 
-        <div className="navbar-countdown"><ExamCountdown /></div>
       </div>
 
       {/* Row 2: External Links & Status */}
@@ -463,7 +463,7 @@ export function BookmarkBar({ activeSubject, onSelect, leadData, homeSummary, ti
             title="5th Sem Notes"
           >
             <div className="link-icon-wrapper"><BookOpen size={14} /></div>
-            <span>5th Sem Notes</span>
+            <span>Notes</span>
           </a>
           <a
             href="https://dsayashpal.vercel.app"
@@ -473,7 +473,7 @@ export function BookmarkBar({ activeSubject, onSelect, leadData, homeSummary, ti
             title="DSA Portal"
           >
             <div className="link-icon-wrapper"><Code2 size={14} /></div>
-            <span>DSA Portal</span>
+            <span>DSA</span>
           </a>
           <a
             href="https://leetcode.com/problemset"
@@ -493,7 +493,7 @@ export function BookmarkBar({ activeSubject, onSelect, leadData, homeSummary, ti
             title="Placement Tracker"
           >
             <div className="link-icon-wrapper"><BriefcaseBusiness size={14} /></div>
-            <span>Placement Tracker</span>
+            <span>Placement</span>
           </a>
           <a
             href="https://portfoliobyjs.vercel.app/"
@@ -510,30 +510,33 @@ export function BookmarkBar({ activeSubject, onSelect, leadData, homeSummary, ti
             target="_blank"
             rel="noreferrer"
             className="bookmark-item premium-link"
-            title="My Github Profile"
+            title="Github Profile"
             style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '12px', marginLeft: '4px' }}
           >
             <div className="link-icon-wrapper" style={{ background: '#0f172a', color: 'white' }}><Github size={14} /></div>
-            <span></span>
+            <span>Github</span>
           </a>
         </div>
-        {activeSubject === 'Home' && homeSummary && (
-          <div className="home-summary-nav" aria-label="Attendance and remaining lectures">
-            <div className="home-summary-nav-item">
-              <CheckCircle2 size={18} />
-              <div>
-                <strong>{homeSummary.attendance}%</strong>
-                <span>Total Attendance · {homeSummary.attended}/{homeSummary.total}</span>
+        <div className="secondary-nav-status">
+          <div className="navbar-countdown"><ExamCountdown activeSemester={activeSemester} /></div>
+          {homeSummary && (
+            <div className="home-summary-nav" aria-label="Attendance summary">
+              <div className="home-summary-nav-item">
+                <CheckCircle2 size={18} />
+                <div>
+                  <strong>{homeSummary.attendance}%</strong>
+                  <span>Total Attendance · {homeSummary.attended}/{homeSummary.total}</span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-        <div className="lead-msg-inline">
-          <div className="lead-msg-values">
-            <span className="lead-msg-label">w/o asgn:</span>
-            <span className={`lead-msg-value ${leadData.typeWithout}`}>{leadData.textWithout}</span>
-            <span className="lead-msg-label">w/ asgn:</span>
-            <span className={`lead-msg-value ${leadData.type}`}>{leadData.textWith}</span>
+          )}
+          <div className="lead-msg-inline">
+            <div className="lead-msg-values">
+              <span className="lead-msg-label">w/o asgn:</span>
+              <span className={`lead-msg-value ${leadData.typeWithout}`}>{leadData.textWithout}</span>
+              <span className="lead-msg-label">w/ asgn:</span>
+              <span className={`lead-msg-value ${leadData.type}`}>{leadData.textWith}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -592,7 +595,7 @@ export function ComparisonMarksFields({ people = [], values = {}, onChange, labe
   );
 }
 
-export function ExamCountdown({ now: externalNow }) {
+export function ExamCountdown({ now: externalNow, activeSemester = '4' }) {
   const [internalTime, setInternalTime] = useState(new Date());
   // Use external time if provided (for sync), otherwise internal time
   const now = externalNow || internalTime;
@@ -616,23 +619,29 @@ export function ExamCountdown({ now: externalNow }) {
       };
 
       // Find absolute next milestone
-      const milestones = [
-        ...CONTEST_SCHEDULE.map(c => ({
-          label: c.name,
-          dateObj: getTargetAt9AM(c.date),
-          type: 'contest'
-        })),
-        {
-          label: 'Mid Sem',
-          dateObj: getTargetAt9AM(EXAM_DATES.midSem),
-          type: 'exam'
-        },
-        {
-          label: 'End Sem',
-          dateObj: getTargetAt9AM(EXAM_DATES.endSem),
-          type: 'exam'
-        }
-      ].filter(m => m.dateObj > now)
+      const milestones = (activeSemester === '5'
+        ? SEM5_ASSESSMENT_ROADMAP.map(event => ({
+          label: event.name,
+          dateObj: getTargetAt9AM(event.date),
+          type: /contest/i.test(event.name) ? 'contest' : 'exam'
+        }))
+        : [
+          ...CONTEST_SCHEDULE.map(c => ({
+            label: c.name,
+            dateObj: getTargetAt9AM(c.date),
+            type: 'contest'
+          })),
+          {
+            label: 'Mid Sem',
+            dateObj: getTargetAt9AM(EXAM_DATES.midSem),
+            type: 'exam'
+          },
+          {
+            label: 'End Sem',
+            dateObj: getTargetAt9AM(EXAM_DATES.endSem),
+            type: 'exam'
+          }
+        ]).filter(m => m.dateObj > now)
         .sort((a, b) => a.dateObj - b.dateObj);
 
       if (milestones.length === 0) {
@@ -656,7 +665,7 @@ export function ExamCountdown({ now: externalNow }) {
     };
 
     setNextEvent(calculateTime());
-  }, [now]); // Recalculate whenever 'now' changes
+  }, [now, activeSemester]); // Recalculate when time or semester changes
 
   if (nextEvent.expired) return null;
 

@@ -100,7 +100,7 @@ import {
 const SEM5_ATTENDANCE_BASELINE = {
   AML: { 'AML Class': { attended: 13, total: 20 }, 'AML Lab': { attended: 19, total: 21 } },
   CN: { 'CN Class': { attended: 19, total: 23 }, 'CN Lab': { attended: 20, total: 22 } },
-  DL: { 'DL Class': { attended: 21, total: 22 }, 'DL Lab': { attended: 19, total: 24 } },
+  DL: { 'DL Class': { attended: 19, total: 24 }, 'DL Lab': { attended: 21, total: 22 } },
   MCA: { 'MCA Class': { attended: 22, total: 23 }, 'MCA Lab': { attended: 20, total: 24 } }
 };
 const SEM5_ATTENDANCE_AS_OF = '2026-11-05T12:00:00+05:30';
@@ -287,6 +287,13 @@ function App() {
             (task.subjectName === baseName || task.subject === baseName));
           const existing = meta?.myAttendanceBySubject || {};
           const merged = { ...attendance, ...existing };
+          // Repair the baseline written by the earlier version that swapped DL
+          // Class and Lab while preserving any other user-adjusted counts.
+          if (baseName === 'DL' && Number(existing['DL Class']?.attended) === 21 && Number(existing['DL Class']?.total) === 22 &&
+              Number(existing['DL Lab']?.attended) === 19 && Number(existing['DL Lab']?.total) === 24) {
+            merged['DL Class'] = attendance['DL Class'];
+            merged['DL Lab'] = attendance['DL Lab'];
+          }
           if (meta) {
             if (JSON.stringify(existing) !== JSON.stringify(merged) || meta.myAttendanceAsOf !== SEM5_ATTENDANCE_AS_OF) {
               await updateDoc(doc(db, 'tasks', meta.id), {
@@ -332,15 +339,18 @@ function App() {
           const attendanceFields = { present: !isAbsent, attendanceRecorded: true };
           const migrationFields = {
             number: subjectNumbers[lecture.subject],
-            ...attendanceFields,
             historicalImport: true,
-            historicalImportVersion: 4
+            historicalImportVersion: 5
           };
 
           if (existingTask) {
-            if (existingTask.number !== subjectNumbers[lecture.subject] || existingTask.historicalImportVersion !== 4 ||
-                existingTask.present !== attendanceFields.present || existingTask.attendanceRecorded !== true) {
-              batch.update(doc(db, 'tasks', existingTask.id), migrationFields);
+            // Preserve attendance edits on imported records across reloads. Only seed
+            // attendance on a pre-existing row when it has never been recorded.
+            const attendanceWasNeverSet = existingTask.present === undefined && existingTask.attendanceRecorded === undefined;
+            const updates = attendanceWasNeverSet ? { ...migrationFields, ...attendanceFields } : migrationFields;
+            const changed = Object.entries(updates).some(([field, value]) => existingTask[field] !== value);
+            if (changed) {
+              batch.update(doc(db, 'tasks', existingTask.id), updates);
             }
             continue;
           }
@@ -386,7 +396,12 @@ function App() {
       const pendingLectures = getPendingLectures(time, semesterTasks, activeSemester);
 
       if (pendingLectures.length > 0) {
-        const attendanceOverrides = JSON.parse(localStorage.getItem('daily_lecture_attendance') || '{}');
+        let attendanceOverrides = {};
+        try {
+          attendanceOverrides = JSON.parse(localStorage.getItem('daily_lecture_attendance') || '{}');
+        } catch (error) {
+          console.warn('Could not read today\'s attendance overrides:', error);
+        }
         for (const lecture of pendingLectures) {
           // Find the next lecture number for this subject
           const subjectLectures = semesterTasks.filter(
@@ -764,22 +779,26 @@ function App() {
   const homeSummary = useMemo(() => {
     const regularLectures = semesterTasks.filter(task => task.type === 'lecture');
     const attendanceMeta = semesterTasks.filter(task => task.type === 'friend_meta' && task.myAttendanceBySubject);
-    const hasBaseline = attendanceMeta.length > 0;
-    const baselineTotal = attendanceMeta.reduce((sum, meta) => sum + Object.values(meta.myAttendanceBySubject || {}).reduce((subjectSum, counts) => subjectSum + Number(counts.total || 0), 0), 0);
-    const baselineAttended = attendanceMeta.reduce((sum, meta) => sum + Object.values(meta.myAttendanceBySubject || {}).reduce((subjectSum, counts) => subjectSum + Number(counts.attended || 0), 0), 0);
-    const cutoff = (attendanceMeta.find(meta => meta.myAttendanceAsOf)?.myAttendanceAsOf || '').slice(0, 10);
-    const laterLectures = hasBaseline ? regularLectures.filter(lecture => lecture.date && lecture.date > cutoff) : regularLectures;
-    const total = hasBaseline ? baselineTotal + laterLectures.length : regularLectures.length;
-    const attended = hasBaseline
-      ? baselineAttended + laterLectures.filter(lecture => lecture.present !== false).length
-      : regularLectures.filter(lecture => lecture.present !== false).length;
-    const completed = regularLectures.filter(lecture => lecture.completed).length;
+    const subjects = [...new Set([
+      ...regularLectures.map(lecture => lecture.subjectName),
+      ...attendanceMeta.flatMap(meta => Object.keys(meta.myAttendanceBySubject || {}))
+    ])];
+    const summary = subjects.reduce((totals, subjectName) => {
+      const lectures = regularLectures.filter(lecture => lecture.subjectName === subjectName);
+      const meta = attendanceMeta.find(item =>
+        item.subjectName === subjectName || item.subject === subjectName ||
+        item.myAttendanceBySubject?.[subjectName]
+      );
+      const stats = getAttendanceStats(lectures, meta, subjectName);
+      totals.attended += stats.attended;
+      totals.total += stats.total;
+      return totals;
+    }, { attended: 0, total: 0 });
 
     return {
-      attendance: total ? ((attended / total) * 100).toFixed(2) : '0.00',
-      attended,
-      total,
-      remaining: Math.max(0, total - completed)
+      attendance: summary.total ? ((summary.attended / summary.total) * 100).toFixed(2) : '0.00',
+      attended: summary.attended,
+      total: summary.total
     };
   }, [semesterTasks]);
 
