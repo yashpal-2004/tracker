@@ -63,44 +63,62 @@ export const SEM5_SCHEDULE_DATA = [
     {
         day: 'Mon',
         items: [
-            { name: 'Computer Networks Lec', time: '9:00 AM - 10:20 AM', room: 'A402', color: 'blue', start: 9 * 60, duration: 80 },
-            { name: 'DBMS Lab', time: '10:30 AM - 11:50 AM', room: 'Lab 3: C101', color: 'green', start: 10 * 60 + 30, duration: 80 },
-            { name: 'Lunch', time: '1:00 PM - 2:00 PM', color: 'yellow', start: 13 * 60, duration: 60 },
-            { name: 'Operating Systems Lec', time: '2:00 PM - 3:20 PM', room: 'C203', color: 'pink', start: 14 * 60, duration: 80 }
+            { name: 'Advanced Machine Learning Lec', time: '8:40 AM - 10:00 AM', room: 'A409', color: 'purple', start: 8 * 60 + 40, duration: 80 },
+            { name: 'Entrepreneurship - 1 (SBG)', time: '10:10 AM - 11:10 AM', room: 'C104', color: 'pink', start: 10 * 60 + 10, duration: 60 },
+            { name: 'Entrepreneurship - 2 (CGE)', time: '11:20 AM - 12:20 PM', room: 'A410', color: 'pink', start: 11 * 60 + 20, duration: 60 },
+            { name: 'Lunch Break', time: '12:30 PM - 1:30 PM', room: 'Dining Hall', color: 'yellow', start: 12 * 60 + 30, duration: 60 },
+            { name: 'Deep Learning Lec', time: '1:30 PM - 2:50 PM', room: 'A409', color: 'green', start: 13 * 60 + 30, duration: 80 },
+            { name: 'Modern Computer Architecture Lab', time: '2:55 PM - 4:15 PM', room: 'A409', color: 'orange', start: 14 * 60 + 55, duration: 80 },
+            { name: 'Computer Networks Lec', time: '4:20 PM - 5:30 PM', room: 'A409', color: 'blue', start: 16 * 60 + 20, duration: 70 },
+            { name: 'Evening Snacks Break', time: '5:30 PM - 6:00 PM', room: 'Cafeteria', color: 'yellow', start: 17 * 60 + 30, duration: 30 }
         ]
     },
     {
         day: 'Tue',
         items: [
-            { name: 'DBMS Lec', time: '9:00 AM - 10:20 AM', room: 'C203', color: 'green', start: 9 * 60, duration: 80 },
-            { name: 'DAA Lecture', time: '10:30 AM - 11:50 AM', room: 'C302', color: 'orange', start: 10 * 60 + 30, duration: 80 },
-            { name: 'Lunch', time: '1:00 PM - 2:00 PM', color: 'yellow', start: 13 * 60, duration: 60 },
-            { name: 'Computer Networks Lab', time: '2:00 PM - 3:20 PM', room: 'Lab 5: A503', color: 'blue', start: 14 * 60, duration: 80 }
+            { name: 'Computer Networks Lab', time: '8:40 AM - 10:00 AM', room: 'A409', color: 'blue', start: 8 * 60 + 40, duration: 80 },
+            { name: 'Entrepreneurship - 1 (SBG)', time: '10:10 AM - 11:10 AM', room: 'C104', color: 'pink', start: 10 * 60 + 10, duration: 60 },
+            { name: 'Entrepreneurship - 2 (CGE)', time: '11:20 AM - 12:20 PM', room: 'A410', color: 'pink', start: 11 * 60 + 20, duration: 60 },
+            { name: 'Lunch Break', time: '12:30 PM - 1:30 PM', room: 'Dining Hall', color: 'yellow', start: 12 * 60 + 30, duration: 60 },
+            { name: 'Deep Learning Lab', time: '1:30 PM - 2:50 PM', room: 'Lab 2: A405', color: 'green', start: 13 * 60 + 30, duration: 80 },
+            { name: 'Advanced Machine Learning Lab', time: '2:55 PM - 4:15 PM', room: 'Lab 2: A405', color: 'purple', start: 14 * 60 + 55, duration: 80 },
+            { name: 'Modern Computer Architecture Lec', time: '4:20 PM - 5:30 PM', room: 'A409', color: 'orange', start: 16 * 60 + 20, duration: 70 },
+            { name: 'Evening Snacks Break', time: '5:30 PM - 6:00 PM', room: 'Cafeteria', color: 'yellow', start: 17 * 60 + 30, duration: 30 }
         ]
     },
     {
         day: 'Wed',
         items: [
-            { name: 'Computer Networks Lec', time: '9:00 AM - 10:20 AM', room: 'A402', color: 'blue', start: 9 * 60, duration: 80 },
-            { name: 'Operating Systems Lab', time: '10:30 AM - 11:50 AM', room: 'Lab 4: C102', color: 'pink', start: 10 * 60 + 30, duration: 80 },
-            { name: 'Lunch', time: '12:00 PM - 1:00 PM', color: 'yellow', start: 12 * 60, duration: 60 },
-            { name: 'DAA Lecture', time: '1:30 PM - 2:50 PM', room: 'C302', color: 'orange', start: 13 * 60 + 30, duration: 80 }
+            { name: 'Advanced Machine Learning Lec', time: '8:40 AM - 10:00 AM', room: 'A409', color: 'purple', start: 8 * 60 + 40, duration: 80 },
+            { name: 'Entrepreneurship - 1 (SBG)', time: '10:10 AM - 11:10 AM', room: 'C104', color: 'pink', start: 10 * 60 + 10, duration: 60 },
+            { name: 'Entrepreneurship - 2 (CGE)', time: '11:20 AM - 12:20 PM', room: 'A410', color: 'pink', start: 11 * 60 + 20, duration: 60 },
+            { name: 'Lunch Break', time: '12:30 PM - 1:30 PM', room: 'Dining Hall', color: 'yellow', start: 12 * 60 + 30, duration: 60 },
+            { name: 'Deep Learning Lec', time: '1:30 PM - 2:50 PM', room: 'A409', color: 'green', start: 13 * 60 + 30, duration: 80 },
+            { name: 'Modern Computer Architecture Lab', time: '2:55 PM - 4:15 PM', room: 'A409', color: 'orange', start: 14 * 60 + 55, duration: 80 },
+            { name: 'Computer Networks Lec', time: '4:20 PM - 5:30 PM', room: 'A409', color: 'blue', start: 16 * 60 + 20, duration: 70 },
+            { name: 'Evening Snacks Break', time: '5:30 PM - 6:00 PM', room: 'Cafeteria', color: 'yellow', start: 17 * 60 + 30, duration: 30 }
         ]
     },
     {
         day: 'Thurs',
         items: [
-            { name: 'DBMS Lec', time: '9:00 AM - 10:20 AM', room: 'C203', color: 'green', start: 9 * 60, duration: 80 },
-            { name: 'Operating Systems Lec', time: '10:30 AM - 11:50 AM', room: 'C203', color: 'pink', start: 10 * 60 + 30, duration: 80 },
-            { name: 'Lunch', time: '12:00 PM - 1:00 PM', color: 'yellow', start: 12 * 60, duration: 60 },
-            { name: 'DAA Lab', time: '1:00 PM - 2:20 PM', room: 'Lab 6: A504', color: 'orange', start: 13 * 60, duration: 80 }
+            { name: 'Advanced Machine Learning Lab', time: '8:40 AM - 10:00 AM', room: 'Lab 2: A502', color: 'purple', start: 8 * 60 + 40, duration: 80 },
+            { name: 'Entrepreneurship - 1 (SBG)', time: '10:10 AM - 11:10 AM', room: 'C104', color: 'pink', start: 10 * 60 + 10, duration: 60 },
+            { name: 'Entrepreneurship - 2 (CGE)', time: '11:20 AM - 12:20 PM', room: 'A410', color: 'pink', start: 11 * 60 + 20, duration: 60 },
+            { name: 'Lunch Break', time: '12:30 PM - 1:30 PM', room: 'Dining Hall', color: 'yellow', start: 12 * 60 + 30, duration: 60 },
+            { name: 'Computer Networks Lab', time: '1:30 PM - 2:50 PM', room: 'A409', color: 'blue', start: 13 * 60 + 30, duration: 80 },
+            { name: 'Deep Learning Lab', time: '2:55 PM - 4:15 PM', room: 'Lab 2: A405', color: 'green', start: 14 * 60 + 55, duration: 80 },
+            { name: 'Modern Computer Architecture Lec', time: '4:20 PM - 5:30 PM', room: 'A409', color: 'orange', start: 16 * 60 + 20, duration: 70 },
+            { name: 'Evening Snacks Break', time: '5:30 PM - 6:00 PM', room: 'Cafeteria', color: 'yellow', start: 17 * 60 + 30, duration: 30 }
         ]
     },
     {
         day: 'Fri',
         items: [
-            { name: 'Contest', time: '9:00 AM - 12:00 PM', color: 'white', start: 9 * 60, duration: 180 },
-            { name: 'Lunch', time: '12:00 PM - 1:00 PM', color: 'yellow', start: 12 * 60, duration: 60 }
+            { name: 'Lunch Break', time: '12:30 PM - 1:30 PM', room: 'Dining Hall', color: 'yellow', start: 12 * 60 + 30, duration: 60 },
+            { name: 'Assessment: Contests, Internals, Quizzes & Mock Interviews', time: '1:30 PM - 2:50 PM', room: 'Campus Lab / Testing Hall', color: 'orange', start: 13 * 60 + 30, duration: 80 },
+            { name: 'Contest continues', time: '2:55 PM - 4:15 PM', color: 'white', start: 14 * 60 + 55, duration: 80 },
+            { name: 'Evening Snacks Break', time: '5:30 PM - 6:00 PM', room: 'Cafeteria', color: 'yellow', start: 17 * 60 + 30, duration: 30 }
         ]
     }
 ];
@@ -123,10 +141,23 @@ const TIME_SLOTS = [
 
 function TimetableView({ activeSemester = '4' }) {
     const activeSchedule = activeSemester === '5' ? SEM5_SCHEDULE_DATA : SCHEDULE_DATA;
-    // Total mins from 9:00 to 18:30 (9.5 hours = 570 mins)
-    const START_TIME = 9 * 60;
-    const END_TIME = 18 * 60 + 30;
+    const isSemester5 = activeSemester === '5';
+    const START_TIME = isSemester5 ? 8 * 60 + 40 : 9 * 60;
+    const END_TIME = isSemester5 ? 18 * 60 : 18 * 60 + 30;
     const TOTAL_DURATION = END_TIME - START_TIME;
+    const timeMarkers = isSemester5
+        ? [
+            { label: '08:40', mins: 8 * 60 + 40 }, { label: '10:10', mins: 10 * 60 + 10 },
+            { label: '11:20', mins: 11 * 60 + 20 }, { label: '12:30', mins: 12 * 60 + 30 },
+            { label: '01:30', mins: 13 * 60 + 30 }, { label: '02:55', mins: 14 * 60 + 55 },
+            { label: '04:20', mins: 16 * 60 + 20 }, { label: '05:30', mins: 17 * 60 + 30 },
+            { label: '06:00', mins: 18 * 60 }
+        ]
+        : TIME_SLOTS.map(slot => {
+            const [hour, minute] = slot.split(':').map(Number);
+            const mins = hour < 9 ? (hour + 12) * 60 + minute : hour * 60 + minute;
+            return { label: `${slot} ${hour >= 9 && hour < 12 ? 'AM' : 'PM'}`, mins };
+        });
 
     const getPositionStyle = (start, duration) => {
         const startPercent = ((start - START_TIME) / TOTAL_DURATION) * 100;
@@ -145,38 +176,16 @@ function TimetableView({ activeSemester = '4' }) {
                     <div className="day-col-header">Day</div>
 
                     <div className="timeline-header">
-                        {TIME_SLOTS.map((slot, index) => {
-                            // Approximate positions for the labels
-                            // We'll just distribute them evenly-ish or use absolute positions if we want exact mapping,
-                            // but a flex row is easier for checking.
-                            // Actually, let's use the same scale logic for markers.
-                            const [h, m] = slot.split(':').map(Number);
-                            let mins = h * 60 + m;
-                            if (h < 9) mins += 12 * 60; // handle PM if needed, but here 1:00 is 13:00 logic in data
-                            if (h === 1) mins = 13 * 60 + m;
-                            if (h === 2) mins = 14 * 60 + m;
-                            if (h === 3) mins = 15 * 60 + m;
-                            if (h === 4) mins = 16 * 60 + m;
-                            if (h === 5) mins = 17 * 60 + m;
-                            if (h === 6) mins = 18 * 60 + m;
-
-                            // Note: The specific slots like 10:20 are tricky.
-                            // Let's just use the visual labels from the image as a guide but position them evenly?
-                            // The image has unequal columns. 9:00-9:30 is same visual width as 10:00-10:20? Maybe.
-                            // Let's stick to true time scaling for accuracy.
-
+                        {timeMarkers.map(({ label, mins }) => {
                             const pos = ((mins - START_TIME) / TOTAL_DURATION) * 100;
-
-                            // Don't render if out of bounds
                             if (pos < 0 || pos > 100) return null;
-
                             return (
                                 <div
-                                    key={slot}
+                                    key={label}
                                     className="time-marker"
                                     style={{ left: `${pos}%` }}
                                 >
-                                    {slot.split(':')[0] >= 9 && slot.split(':')[0] < 12 ? `${slot} AM` : `${slot} PM`}
+                                    {label}
                                 </div>
                             );
                         })}
@@ -210,7 +219,7 @@ function TimetableView({ activeSemester = '4' }) {
                                                 backgroundColor: color.bg,
                                                 borderLeft: `3px solid ${color.border}`,
                                                 color: color.text
-                                             }}
+                                            }}
                                         >
                                             <div className="event-name">{item.name}</div>
                                             <div className="event-meta">

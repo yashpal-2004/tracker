@@ -1,5 +1,6 @@
 import { SCHEDULE_DATA, SEM5_SCHEDULE_DATA } from './TimetableView';
 import { getSubjectFromLecture } from './timetableMapping';
+import { SEM5_LECTURE_HISTORY } from './sem5LectureHistory';
 
 /**
  * Auto Lecture Creator
@@ -79,26 +80,14 @@ export const getPendingLectures = (currentTime = new Date(), existingTasks = [],
     }
 
     const pendingLectures = [];
-    const excludeKeywords = ['lunch', 'minor', 'contest'];
-
     todaySchedule.items.forEach(item => {
-        const nameLower = item.name.toLowerCase();
-        const isExcluded = excludeKeywords.some(keyword => nameLower.includes(keyword));
-
-        if (isExcluded) {
-            return; // Skip non-academic items
-        }
+        const subject = getSubjectFromLecture(item.name, activeSemester);
+        if (!subject) return; // Skip breaks, minor-track sessions, and assessments.
 
         const lectureEndTime = item.start + item.duration;
 
         // Check if lecture has ended
         if (currentMinutes >= lectureEndTime) {
-            const subject = getSubjectFromLecture(item.name, activeSemester);
-
-            if (!subject) {
-                return;
-            }
-
             // Check if this lecture already exists for today
             const alreadyExists = existingTasks.some(task =>
                 task.type === 'lecture' &&
@@ -106,6 +95,9 @@ export const getPendingLectures = (currentTime = new Date(), existingTasks = [],
                 task.name === item.name &&
                 task.date === todayStr &&
                 (task.semester === activeSemester || (!task.semester && activeSemester === '4'))
+            );
+            const includedInSem5History = activeSemester === '5' && SEM5_LECTURE_HISTORY.some(record =>
+                record.subject === subject && record.name === item.name && record.date === todayStr
             );
 
             // Unique ID for this specific lecture instance
@@ -115,7 +107,7 @@ export const getPendingLectures = (currentTime = new Date(), existingTasks = [],
             const deletedLectures = JSON.parse(localStorage.getItem('deleted_lectures') || '{}');
             const wasManuallyDeleted = deletedLectures[lectureId] !== undefined;
 
-            if (!alreadyExists && !wasManuallyDeleted) {
+            if (!alreadyExists && !includedInSem5History && !wasManuallyDeleted) {
                 pendingLectures.push({
                     id: lectureId,
                     name: item.name,
@@ -163,19 +155,12 @@ export const getNextLecture = (currentTime = new Date(), activeSemester = '4') =
         return null;
     }
 
-    const excludeKeywords = ['lunch', 'minor', 'contest'];
-
     // Find the next lecture that hasn't started yet
     for (const item of todaySchedule.items) {
-        const nameLower = item.name.toLowerCase();
-        const isExcluded = excludeKeywords.some(keyword => nameLower.includes(keyword));
-
-        if (isExcluded) {
-            continue;
-        }
+        const subject = getSubjectFromLecture(item.name, activeSemester);
+        if (!subject) continue;
 
         if (currentMinutes < item.start) {
-            const subject = getSubjectFromLecture(item.name, activeSemester);
             return {
                 name: item.name,
                 subject: subject,
@@ -220,20 +205,13 @@ export const getCurrentLecture = (currentTime = new Date(), activeSemester = '4'
         return null;
     }
 
-    const excludeKeywords = ['lunch', 'minor', 'contest'];
-
     for (const item of todaySchedule.items) {
-        const nameLower = item.name.toLowerCase();
-        const isExcluded = excludeKeywords.some(keyword => nameLower.includes(keyword));
-
-        if (isExcluded) {
-            continue;
-        }
+        const subject = getSubjectFromLecture(item.name, activeSemester);
+        if (!subject) continue;
 
         const lectureEndTime = item.start + item.duration;
 
         if (currentMinutes >= item.start && currentMinutes < lectureEndTime) {
-            const subject = getSubjectFromLecture(item.name, activeSemester);
             return {
                 name: item.name,
                 subject: subject,

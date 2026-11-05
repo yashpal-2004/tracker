@@ -16,18 +16,18 @@ export const LECTURE_TO_SUBJECT_MAP = {
 export const SEM5_LECTURE_TO_SUBJECT_MAP = {
     'Computer Networks Lec': 'CN Class',
     'Computer Networks Lab': 'CN Lab',
-    'DBMS Lec': 'DBMS Class',
-    'DBMS Lab': 'DBMS Lab',
-    'Operating Systems Lec': 'OS Class',
-    'Operating Systems Lab': 'OS Lab',
-    'DAA Lecture': 'DAA Class',
-    'DAA Lab': 'DAA Lab',
+    'Deep Learning Lec': 'DL Class',
+    'Deep Learning Lab': 'DL Lab',
+    'Advanced Machine Learning Lec': 'AML Class',
+    'Advanced Machine Learning Lab': 'AML Lab',
+    'Modern Computer Architecture Lec': 'MCA Class',
+    'Modern Computer Architecture Lab': 'MCA Lab',
 };
 
 // Get all unique lecture names from the timetable (excluding non-academic items)
 export const getAllLectureNames = (semester = '4') => {
     const lectureNames = new Set();
-    const excludeKeywords = ['lunch', 'minor', 'contest'];
+    const excludeKeywords = ['lunch', 'minor', 'entrepreneurship', 'contest', 'break', 'assessment'];
     const schedule = semester === '5' ? SEM5_SCHEDULE_DATA : SCHEDULE_DATA;
 
     schedule.forEach(day => {

@@ -1,27 +1,41 @@
 import React, { useMemo } from 'react';
-import { SCHEDULE_DATA, COLORS } from './TimetableView';
+import { SCHEDULE_DATA, SEM5_SCHEDULE_DATA, COLORS } from './TimetableView';
 import {
-    CheckCircle2,
-    Clock,
     Calendar,
     Zap,
-    BookOpen,
-    PlayCircle,
-    CheckCircle,
-    Play,
-    Pause
+    Check,
+    X,
+    ChevronDown,
+    ChevronUp
 } from 'lucide-react';
 import './App.css';
-import { getCurrentLecture, getNextLecture, getPendingLectures } from './autoLectureCreator';
+import { getCurrentLecture, getNextLecture } from './autoLectureCreator';
+import { getSubjectFromLecture } from './timetableMapping';
 
-const HomeDashboard = ({ tasks, todayStr, autoLecturePaused, onToggleAutoLecturePause, activeSemester = '4' }) => {
+const HomeDashboard = ({ tasks, todayStr, activeSemester = '4', onAttendanceChange }) => {
+    const [liveTime, setLiveTime] = React.useState(new Date());
+    const [pastLectureView, setPastLectureView] = React.useState({});
+    React.useEffect(() => {
+        const timer = setInterval(() => setLiveTime(new Date()), 1000);
+        return () => clearInterval(timer);
+    }, []);
+
     const stats = useMemo(() => {
         const activeTasks = tasks.filter(t => t.type !== 'friend_meta');
 
         // 1. Attendance Logic
         const regularLectures = activeTasks.filter(t => t.type === 'lecture');
-        const totalLectures = regularLectures.length;
-        const presentLectures = regularLectures.filter(t => t.present !== false).length;
+        const attendanceMeta = tasks.filter(t => t.type === 'friend_meta' && t.myAttendanceBySubject);
+        const baselineEntries = attendanceMeta.flatMap(meta => Object.entries(meta.myAttendanceBySubject || {}).map(([subject, counts]) => ({ meta, subject, counts })));
+        const hasBaseline = baselineEntries.length > 0;
+        const baselineTotal = baselineEntries.reduce((sum, entry) => sum + Number(entry.counts.total || 0), 0);
+        const baselineAttended = baselineEntries.reduce((sum, entry) => sum + Number(entry.counts.attended || 0), 0);
+        const cutoff = (attendanceMeta.find(meta => meta.myAttendanceAsOf)?.myAttendanceAsOf || '').slice(0, 10);
+        const laterLectures = hasBaseline ? regularLectures.filter(lecture => lecture.date && lecture.date > cutoff) : [];
+        const totalLectures = hasBaseline ? baselineTotal + laterLectures.length : regularLectures.length;
+        const presentLectures = hasBaseline
+            ? baselineAttended + laterLectures.filter(lecture => lecture.present !== false).length
+            : regularLectures.filter(t => t.present !== false).length;
         const attendancePct = totalLectures > 0 ? (presentLectures / totalLectures) * 100 : 0;
 
         // 2. Pending Logic
@@ -126,9 +140,44 @@ const HomeDashboard = ({ tasks, todayStr, autoLecturePaused, onToggleAutoLecture
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thurs', 'Fri', 'Sat'];
         const date = new Date(todayStr); // Use the string to ensure it aligns with the local day
         const today = days[date.getDay()];
-        const daySchedule = SCHEDULE_DATA.find(d => d.day === today);
-        return daySchedule ? daySchedule.items : [];
-    }, [todayStr]);
+        const scheduleData = activeSemester === '5' ? SEM5_SCHEDULE_DATA : SCHEDULE_DATA;
+        const daySchedule = scheduleData.find(d => d.day === today);
+        if (!daySchedule) return [];
+
+        const nowMinutes = liveTime.getHours() * 60 + liveTime.getMinutes();
+        return daySchedule.items.filter(item => {
+            const isBreak = /\b(lunch|snacks? break)\b/i.test(item.name);
+            return !isBreak && item.start + (item.duration || 0) > nowMinutes;
+        });
+    }, [todayStr, liveTime, activeSemester]);
+
+    const pastTodaySchedule = useMemo(() => {
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thurs', 'Fri', 'Sat'];
+        const date = new Date(todayStr);
+        const today = days[date.getDay()];
+        const scheduleData = activeSemester === '5' ? SEM5_SCHEDULE_DATA : SCHEDULE_DATA;
+        const daySchedule = scheduleData.find(day => day.day === today);
+        if (!daySchedule) return [];
+
+        const nowMinutes = liveTime.getHours() * 60 + liveTime.getMinutes();
+        return daySchedule.items.filter(item => {
+            const isBreak = /\b(lunch|snacks? break)\b/i.test(item.name);
+            return !isBreak && Boolean(getSubjectFromLecture(item.name, activeSemester)) && item.start + (item.duration || 0) <= nowMinutes;
+        });
+    }, [todayStr, liveTime, activeSemester]);
+
+    const allLecturesFinishedToday = todaySchedule.length === 0 && pastTodaySchedule.length > 0;
+    const isPastLecturesExpanded = pastLectureView[todayStr] ?? allLecturesFinishedToday;
+
+    const currentLecture = useMemo(() => getCurrentLecture(liveTime, activeSemester), [liveTime, activeSemester]);
+    const nextLecture = useMemo(() => getNextLecture(liveTime, activeSemester), [liveTime, activeSemester]);
+    const formatCountdown = (minutes) => {
+        const seconds = Math.max(0, minutes * 60 - liveTime.getSeconds());
+        const hours = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        return hours ? `${hours}h ${mins}m ${secs}s` : `${mins}m ${secs}s`;
+    };
 
     const getHeatmapColor = (count) => {
         if (count === 0) return '#f1f5f9';
@@ -141,7 +190,7 @@ const HomeDashboard = ({ tasks, todayStr, autoLecturePaused, onToggleAutoLecture
     return (
         <div className="home-dashboard fade-in">
             {/* Main Layout Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 1.5fr) minmax(300px, 1fr)', gap: '24px', marginBottom: '24px', alignItems: 'start' }}>
+            <div className="dashboard-main-grid">
 
                 {/* Left Column: Today's Schedule & Heatmap */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -155,8 +204,17 @@ const HomeDashboard = ({ tasks, todayStr, autoLecturePaused, onToggleAutoLecture
                         </div>
 
                         <div className="today-list" style={{ flex: 1, overflowY: 'auto', maxHeight: '300px' }}>
-                            {todaySchedule.length > 0 ? todaySchedule.map((item, i) => (
+                            {todaySchedule.length > 0 ? todaySchedule.map((item, i) => {
+                                const subjectName = getSubjectFromLecture(item.name, activeSemester);
+                                const lectureTask = subjectName && tasks.find(task => task.type === 'lecture' && task.subjectName === subjectName && task.name === item.name && task.date === todayStr);
+                                const overrideKey = `${activeSemester}|${todayStr}|${item.name}`;
+                                const attendanceOverrides = JSON.parse(localStorage.getItem('daily_lecture_attendance') || '{}');
+                                const isPresent = attendanceOverrides[overrideKey] ?? (lectureTask ? lectureTask.present !== false : true);
+                                return (
                                 <div key={i} className="today-item" style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '16px',
                                     borderLeft: `4px solid ${COLORS[item.color]?.border || '#ccc'}`,
                                     background: `linear-gradient(to right, ${COLORS[item.color]?.bg || '#f8f9fa'}, rgba(255,255,255,0))`,
                                     marginBottom: '12px',
@@ -166,18 +224,90 @@ const HomeDashboard = ({ tasks, todayStr, autoLecturePaused, onToggleAutoLecture
                                     <div className="time-col">
                                         <span className="time-text" style={{ fontSize: '0.85rem', fontWeight: 700, color: '#64748b' }}>{item.time}</span>
                                     </div>
-                                    <div className="info-col" style={{ marginTop: '4px' }}>
+                                    <div className="info-col" style={{ marginTop: '4px', flex: 1, minWidth: 0 }}>
                                         <div className="class-name" style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1e293b' }}>{item.name}</div>
-                                        <div className="class-room" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>{item.room}</div>
+                                        <div className="class-room" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
+                                            {item.room}
+                                            {currentLecture?.startTime === item.start && currentLecture.name === item.name && (
+                                                <strong style={{ marginLeft: '10px', color: '#059669' }}>
+                                                    In progress · ends in {formatCountdown(currentLecture.minutesRemaining)}
+                                                </strong>
+                                            )}
+                                            {nextLecture?.startTime === item.start && nextLecture.name === item.name && (
+                                                <strong style={{ marginLeft: '10px', color: '#4f46e5' }}>
+                                                    Up next · starts in {formatCountdown(nextLecture.minutesUntil)}
+                                                </strong>
+                                            )}
+                                        </div>
                                     </div>
+                                    {subjectName && onAttendanceChange && (
+                                        <div role="group" aria-label={`${item.name} attendance`} style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                            <button
+                                                type="button"
+                                                aria-pressed={isPresent}
+                                                onClick={() => onAttendanceChange(item, true)}
+                                                title={`Mark ${item.name} present`}
+                                                style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${isPresent ? '#16a34a' : '#cbd5e1'}`, background: isPresent ? '#dcfce7' : 'white', color: isPresent ? '#15803d' : '#64748b', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
+                                            >
+                                                <Check size={14} /> Present
+                                            </button>
+                                            <button
+                                                type="button"
+                                                aria-pressed={!isPresent}
+                                                onClick={() => onAttendanceChange(item, false)}
+                                                title={`Mark ${item.name} absent`}
+                                                style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${!isPresent ? '#dc2626' : '#cbd5e1'}`, background: !isPresent ? '#fee2e2' : 'white', color: !isPresent ? '#b91c1c' : '#64748b', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
+                                            >
+                                                <X size={14} /> Absent
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                            )) : (
+                                );
+                            }) : (
                                 <div className="empty-state" style={{ textAlign: 'center', padding: '32px 16px' }}>
                                     <div className="empty-icon" style={{ fontSize: '2rem', marginBottom: '8px' }}>🎉</div>
-                                    <p style={{ color: '#64748b', fontSize: '0.9rem' }}>No classes scheduled today.</p>
+                                    <p style={{ color: '#64748b', fontSize: '0.9rem' }}>No more classes scheduled today.</p>
                                 </div>
                             )}
                         </div>
+                        {pastTodaySchedule.length > 0 && (
+                            <div className="past-lectures-section">
+                                <button
+                                    type="button"
+                                    className="past-lectures-toggle"
+                                    aria-expanded={isPastLecturesExpanded}
+                                    onClick={() => setPastLectureView(current => ({ ...current, [todayStr]: !isPastLecturesExpanded }))}
+                                >
+                                    <span>Earlier today · {pastTodaySchedule.length} lectures</span>
+                                    {isPastLecturesExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                </button>
+                                {isPastLecturesExpanded && (
+                                    <div className="past-lectures-list">
+                                        {pastTodaySchedule.map((item, i) => {
+                                            const subjectName = getSubjectFromLecture(item.name, activeSemester);
+                                            const lectureTask = tasks.find(task => task.type === 'lecture' && task.subjectName === subjectName && task.name === item.name && task.date === todayStr);
+                                            const overrideKey = `${activeSemester}|${todayStr}|${item.name}`;
+                                            const attendanceOverrides = JSON.parse(localStorage.getItem('daily_lecture_attendance') || '{}');
+                                            const isPresent = attendanceOverrides[overrideKey] ?? (lectureTask ? lectureTask.present !== false : true);
+                                            return (
+                                                <div key={`${item.name}-${i}`} className="today-item past-lecture-item" style={{ borderLeft: `4px solid ${COLORS[item.color]?.border || '#ccc'}`, background: `linear-gradient(to right, ${COLORS[item.color]?.bg || '#f8f9fa'}, rgba(255,255,255,0))` }}>
+                                                    <div className="time-col"><span className="time-text">{item.time}</span></div>
+                                                    <div className="info-col">
+                                                        <div className="class-name">{item.name}</div>
+                                                        <div className="class-room">{item.room}</div>
+                                                    </div>
+                                                    <div role="group" aria-label={`${item.name} attendance`} className="attendance-toggle-group">
+                                                        <button type="button" aria-pressed={isPresent} onClick={() => onAttendanceChange(item, true)} className={`attendance-toggle present ${isPresent ? 'selected' : ''}`}><Check size={14} /> Present</button>
+                                                        <button type="button" aria-pressed={!isPresent} onClick={() => onAttendanceChange(item, false)} className={`attendance-toggle absent ${!isPresent ? 'selected' : ''}`}><X size={14} /> Absent</button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </section>
 
                     {/* Activity Heatmap */}
@@ -230,311 +360,8 @@ const HomeDashboard = ({ tasks, todayStr, autoLecturePaused, onToggleAutoLecture
                     </section>
                 </div>
 
-                {/* Right Column: Stats & Live Lecture Status */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-
-                    {/* Stats Grid - Side-by-side or stacked depending on width */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px' }}>
-                        <div className="stat-card attendance-card-home" style={{ margin: 0, height: '100%' }}>
-                            <div className="stat-icon-wrapper attendance-icon">
-                                <CheckCircle2 size={24} />
-                            </div>
-                            <div className="stat-info">
-                                <div className="stat-value">{stats.attendancePct}%</div>
-                                <div className="stat-label">Total Attendance</div>
-                                <div className="stat-sub">{stats.presentLectures}/{stats.totalLectures} potential</div>
-                            </div>
-                        </div>
-
-                        <div className="stat-card pending-card-home" style={{ margin: 0, height: '100%' }}>
-                            <div className="stat-icon-wrapper pending-icon">
-                                <Clock size={24} />
-                            </div>
-                            <div className="stat-info">
-                                <div className="stat-value">{stats.pendingLectures}</div>
-                                <div className="stat-label">Left Lectures</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Live Lecture Status Widget */}
-                    <div style={{ display: 'flex', flex: 1 }}>
-                        <LiveLectureStatus
-                            tasks={tasks}
-                            autoLecturePaused={autoLecturePaused}
-                            onToggleAutoLecturePause={onToggleAutoLecturePause}
-                            todaySchedule={todaySchedule}
-                            activeSemester={activeSemester}
-                            style={{ width: '100%', display: 'flex', flexDirection: 'column', margin: 0 }}
-                        />
-                    </div>
-                </div>
             </div>
         </div>
-    );
-};
-
-// Live Lecture Status Component
-const LiveLectureStatus = ({ tasks, autoLecturePaused, onToggleAutoLecturePause, todaySchedule = [], activeSemester = '4', style = {} }) => {
-    const [currentTime, setCurrentTime] = React.useState(new Date());
-
-    React.useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date()), 1000); // Update every second
-        return () => clearInterval(timer);
-    }, []);
-
-    const currentLecture = useMemo(() => getCurrentLecture(currentTime, activeSemester), [currentTime, activeSemester]);
-    const nextLecture = useMemo(() => getNextLecture(currentTime, activeSemester), [currentTime, activeSemester]);
-    const pendingLectures = useMemo(() => getPendingLectures(currentTime, tasks, activeSemester), [currentTime, tasks, activeSemester]);
-
-    const formatTimeRemaining = (minutes) => {
-        if (minutes === undefined || minutes === null) return '';
-
-        // Calculate total seconds based on the fact that 'minutes' is (TargetTime - CurrentMinutes)
-        // So basic minutes result implies we are at 0 seconds of current minute.
-        // We need to subtract current seconds to get precise countdown.
-        const secondsPassedInMinute = currentTime.getSeconds();
-        const totalSeconds = minutes * 60 - secondsPassedInMinute;
-
-        if (totalSeconds <= 0) return '0m 0s';
-
-        const h = Math.floor(totalSeconds / 3600);
-        const m = Math.floor((totalSeconds % 3600) / 60);
-        const s = totalSeconds % 60;
-
-        const sStr = s.toString().padStart(2, '0');
-
-        if (h > 0) {
-            return `${h}h ${m}m ${sStr}s`;
-        }
-        return `${m}m ${sStr}s`;
-    };
-
-    const isBeforeSem5Start = useMemo(() => {
-        if (activeSemester !== '5') return false;
-        const sem5StartDate = new Date('2026-08-10T00:00:00');
-        return currentTime < sem5StartDate;
-    }, [currentTime, activeSemester]);
-
-    if (isBeforeSem5Start) {
-        const sem5StartDate = new Date('2026-08-10T00:00:00');
-        const diffTime = sem5StartDate - currentTime;
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        return (
-            <section className="dashboard-section glass" style={{
-                padding: '20px',
-                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05))',
-                border: '1px solid rgba(99, 102, 241, 0.2)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                ...style
-            }}>
-                <div style={{ display: 'flex', alignItems: 'stretch', gap: '16px', flexWrap: 'wrap', flex: 1, minHeight: 0 }}>
-                    <div style={{
-                        flex: '1',
-                        minWidth: '280px',
-                        padding: '24px 16px',
-                        background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
-                        borderRadius: '12px',
-                        color: 'white',
-                        boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        textAlign: 'center'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                            <Clock size={20} />
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Semester 5 Countdown
-                            </span>
-                        </div>
-                        <div style={{ fontSize: '1.8rem', fontWeight: 800, marginBottom: '6px' }}>
-                            {diffDays > 0 ? `${diffDays} Days Left` : 'Classes Starting Today!'}
-                        </div>
-                        <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                            Classes begin on Monday, 10 Aug 2026
-                        </div>
-                    </div>
-                </div>
-            </section>
-        );
-    }
-
-    if (!currentLecture && !nextLecture && pendingLectures.length === 0 && todaySchedule.length === 0) {
-        return null; // Don't show widget if no classes today
-    }
-
-    return (
-        <section className="dashboard-section glass" style={{
-            padding: '20px',
-            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05))',
-            border: '1px solid rgba(99, 102, 241, 0.2)',
-            display: 'flex',
-            flexDirection: 'column',
-            ...style
-        }}>
-            <div style={{ display: 'flex', alignItems: 'stretch', gap: '16px', flexWrap: 'wrap', flex: 1, minHeight: 0 }}>
-                {/* Current Lecture */}
-                {currentLecture && (
-                    <div style={{
-                        flex: '1',
-                        minWidth: '280px',
-                        padding: '16px',
-                        background: 'linear-gradient(135deg, #10b981, #059669)',
-                        borderRadius: '12px',
-                        color: 'white',
-                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                            <PlayCircle size={20} fill="white" />
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                In Progress
-                            </span>
-                        </div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '4px' }}>
-                            {currentLecture.name}
-                        </div>
-                        <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                            {currentLecture.room} • Ends in {formatTimeRemaining(currentLecture.minutesRemaining)}
-                        </div>
-                    </div>
-                )}
-
-                {/* Next Lecture */}
-                {nextLecture && !currentLecture && (
-                    <div style={{
-                        flex: '1',
-                        minWidth: '280px',
-                        padding: '16px',
-                        background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
-                        borderRadius: '12px',
-                        color: 'white',
-                        boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                            <BookOpen size={20} />
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Up Next
-                            </span>
-                        </div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '4px' }}>
-                            {nextLecture.name}
-                        </div>
-                        <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                            {nextLecture.room} • Starts in {formatTimeRemaining(nextLecture.minutesUntil)}
-                        </div>
-                    </div>
-                )}
-
-                {/* Auto-Created Lectures Status */}
-                {pendingLectures.length > 0 && (
-                    <div style={{
-                        flex: '1',
-                        minWidth: '280px',
-                        padding: '16px',
-                        background: autoLecturePaused 
-                            ? 'linear-gradient(135deg, #e2e8f0, #cbd5e1)'
-                            : 'linear-gradient(135deg, #f59e0b, #d97706)',
-                        borderRadius: '12px',
-                        color: autoLecturePaused ? '#475569' : 'white',
-                        boxShadow: autoLecturePaused ? 'none' : '0 4px 12px rgba(245, 158, 11, 0.3)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center',
-                        border: autoLecturePaused ? '1px solid #cbd5e1' : 'none'
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                            {autoLecturePaused ? <Pause size={20} /> : <CheckCircle size={20} fill="white" />}
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                {autoLecturePaused ? 'Auto-Creation Paused' : 'Auto-Creating'}
-                            </span>
-                        </div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '4px' }}>
-                            {pendingLectures.length} Lecture{pendingLectures.length > 1 ? 's' : ''} Pending
-                        </div>
-                        <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                            {autoLecturePaused ? 'Resume to add them automatically' : 'Will be added automatically'}
-                        </div>
-                    </div>
-                )}
-
-                {/* Info Message & Toggle Action */}
-                <div style={{
-                    flex: '1',
-                    minWidth: '280px',
-                    padding: '16px',
-                    background: 'rgba(255, 255, 255, 0.5)',
-                    borderRadius: '12px',
-                    border: '1px dashed #cbd5e1',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center'
-                }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                        <div style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: '1.5', flex: 1 }}>
-                            <strong style={{ color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ 
-                                    width: '8px', 
-                                    height: '8px', 
-                                    borderRadius: '50%', 
-                                    background: activeSemester === '4' ? '#64748b' : (autoLecturePaused ? '#f59e0b' : '#10b981'),
-                                    display: 'inline-block'
-                                }}></span>
-                                {activeSemester === '4' ? 'Semester 4 Completed' : `Auto-Lecture Creator ${autoLecturePaused ? 'Paused' : 'Active'}`}
-                            </strong>
-                            <span style={{ display: 'block', marginTop: '4px', fontSize: '0.8rem' }}>
-                                {activeSemester === '4' 
-                                    ? 'Automatic lecture adding is permanently disabled for Semester 4.' 
-                                    : (autoLecturePaused 
-                                        ? 'Automatic lecture adding is suspended. Pending lectures will not be created.' 
-                                        : 'Lectures will be automatically added to their respective subjects when classes end.'
-                                    )
-                                }
-                            </span>
-                        </div>
-                        {activeSemester !== '4' && (
-                            <button
-                                onClick={() => onToggleAutoLecturePause(!autoLecturePaused)}
-                                style={{
-                                    padding: '6px 12px',
-                                    borderRadius: '8px',
-                                    border: '1px solid ' + (autoLecturePaused ? '#10b981' : '#cbd5e1'),
-                                    backgroundColor: autoLecturePaused ? '#10b981' : '#f8fafc',
-                                    color: autoLecturePaused ? 'white' : '#475569',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    transition: 'all 0.2s ease',
-                                    boxShadow: autoLecturePaused ? '0 2px 4px rgba(16, 185, 129, 0.2)' : 'none'
-                                }}
-                                onMouseOver={(e) => {
-                                    e.currentTarget.style.backgroundColor = autoLecturePaused ? '#059669' : '#e2e8f0';
-                                }}
-                                onMouseOut={(e) => {
-                                    e.currentTarget.style.backgroundColor = autoLecturePaused ? '#10b981' : '#f8fafc';
-                                }}
-                            >
-                                {autoLecturePaused ? <Play size={12} fill="white" /> : <Pause size={12} fill="#475569" />}
-                                {autoLecturePaused ? 'Resume' : 'Pause'}
-                            </button>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </section>
     );
 };
 
