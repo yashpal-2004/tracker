@@ -311,6 +311,14 @@
 }
 
 .unified-subject-header {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 16px 24px;
   border-radius: 20px;
   margin-bottom: 24px;
@@ -326,19 +334,22 @@
 .header-left {
   display: flex;
   align-items: center;
-  gap: 32px;
+  flex-wrap: nowrap;
+  gap: 20px;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  flex-wrap: nowrap;
+  gap: 12px;
   justify-content: flex-end;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  width: auto;
+  flex-shrink: 1;
   min-width: 0;
-  flex-wrap: wrap;
 }
 
 /* Shared filter-style controls used by the header and comparison manager. */

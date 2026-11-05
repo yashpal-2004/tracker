@@ -660,8 +660,13 @@ svg.lucide {
 /* Glassmorphism Subject Tab Bar */
 .subject-tabs-container {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(52vw, 760px);
+  overflow-x: auto;
+  scrollbar-width: none;
   margin: 0;
   position: relative;
   z-index: 100;
@@ -669,8 +674,14 @@ svg.lucide {
   background: transparent;
 }
 
+.subject-tabs-container::-webkit-scrollbar {
+  display: none;
+}
+
 .subject-tabs {
   display: flex;
+  width: max-content;
+  min-width: max-content;
   background: rgba(255, 255, 255, 0.4);
   backdrop-filter: blur(8px) saturate(150%);
   -webkit-backdrop-filter: blur(8px) saturate(150%);
@@ -855,20 +866,39 @@ svg.lucide {
 
 #section-stats-portal {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  justify-content: flex-end;
+  gap: 12px;
+  width: auto;
+  min-width: 0;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 900px) {
   .unified-subject-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 16px;
   }
 
+  .header-left {
+    width: 100%;
+    gap: 16px;
+  }
+
+  .subject-tabs-container {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+  }
+
   .header-right {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
+  }
+
+  #section-stats-portal {
+    justify-content: flex-start;
   }
 }
 
