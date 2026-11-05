@@ -82,7 +82,8 @@ import {
   LayoutDashboard,
   ChartNoAxesCombined,
   CalendarRange,
-  CalendarDays
+  CalendarDays,
+  CodeXml
 } from 'lucide-react';
 export const NotionLogo = ({ size = 16, className = "" }) => (
   <svg
@@ -475,6 +476,16 @@ export function BookmarkBar({ activeSubject, onSelect, leadData, homeSummary, ti
             <span>DSA Portal</span>
           </a>
           <a
+            href="https://leetcode.com/problemset"
+            target="_blank"
+            rel="noreferrer"
+            className="bookmark-item premium-link"
+            title="LeetCode Problemset"
+          >
+            <div className="link-icon-wrapper"><CodeXml size={14} /></div>
+            <span>LeetCode</span>
+          </a>
+          <a
             href="https://placeyashpal.vercel.app/dashboard"
             target="_blank"
             rel="noreferrer"
@@ -503,7 +514,7 @@ export function BookmarkBar({ activeSubject, onSelect, leadData, homeSummary, ti
             style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '12px', marginLeft: '4px' }}
           >
             <div className="link-icon-wrapper" style={{ background: '#0f172a', color: 'white' }}><Github size={14} /></div>
-            <span>Github</span>
+            <span></span>
           </a>
         </div>
         {activeSubject === 'Home' && homeSummary && (
